@@ -217,6 +217,7 @@ contextBridge.exposeInMainWorld('electron', {
     return payload;
   },
   setAppMenuNav: (items) => ipcRenderer.send('app:setMenuNav', items),
+  syncTray: (payload) => ipcRenderer.send('tray:sync', payload ?? {}),
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
   getVersions: () => ipcRenderer.invoke('app:getVersions'),
   getDeviceId: () => ipcRenderer.invoke('app:getDeviceId'),
