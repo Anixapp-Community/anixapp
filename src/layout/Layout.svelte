@@ -3,10 +3,12 @@
   import type { Snippet } from 'svelte';
   import { navigate, goBack, goForward, navigateSidebarTab } from '../stores/navigation';
   import { openAdminArea, restoreAdminSession, checkTeamMembership, isTeamMember } from '../stores/admin';
-  import { toggleNotificationsModal, openSettingsModal, settingsModalOpen, settingsBossFightLock } from '../stores/modals';
-  import { isAuthenticated, requireAuth } from '../stores/auth';
+  import { toggleNotificationsModal, openNotificationsModal, openSettingsModal, settingsModalOpen, settingsBossFightLock } from '../stores/modals';
+  import { isAuthenticated, requireAuth, openLoginPrompt, applyAccountSessionChange } from '../stores/auth';
+  import { notificationUnreadCount } from '../stores/notifications';
+  import { showToast } from '../stores/toast';
   import { ensureProfileId } from '../utils/profile';
-  import { bindSearchHotkeys } from '../search-controller';
+  import { bindSearchHotkeys, openSearch } from '../search-controller';
   import { loadSelfProfileGlobal } from '../utils/profile';
   import { downloads } from '../stores/downloads';
 
@@ -191,6 +193,42 @@
         scheduleActive = true;
       });
     });
+  }
+
+  /** Команды из меню трея. Аккаунты меняются тем же путём, что в панели профиля. */
+  async function runTrayAction(action: string, profileId?: number) {
+    if (action === 'search') return openSearch();
+    if (action === 'schedule') return openSchedule();
+    if (action === 'login') return openLoginPrompt();
+    if (action === 'history') {
+      if (requireAuth()) navigate('/bookmarks?tab=history');
+      return;
+    }
+    if (action === 'notifications') {
+      if (requireAuth()) openNotificationsModal();
+      return;
+    }
+    if (action === 'switchAccount') {
+      const id = Number(profileId);
+      if (!(id > 0)) return;
+      try {
+        const res = await window.anixApi?.auth?.switchAccount?.(id);
+        if (!res?.success) throw new Error('switch failed');
+        if (!res.alreadyActive) await applyAccountSessionChange();
+      } catch {
+        showToast('Не удалось переключить аккаунт', 'err');
+      }
+      return;
+    }
+    if (action === 'logout') {
+      if (!confirm('Выйти из аккаунта и убрать его из списка быстрой смены?')) return;
+      try {
+        await window.anixApi?.auth?.logout?.();
+        await applyAccountSessionChange();
+      } catch {
+        showToast('Не удалось выйти', 'err');
+      }
+    }
   }
 
   function openSchedule() {
@@ -410,11 +448,12 @@
     };
     window.addEventListener('app:openSettings', onMenuOpenSettings);
 
-    // macOS: меню «Переход» — разделы те же, что в боковой панели
+    // Меню «Переход» на macOS и меню трея: разделы те же, что в боковой панели, плюс команды трея
     const onMenuNavigate = (e: Event) => {
-      const detail = (e as CustomEvent<{ action?: string; id?: string }>).detail;
+      const detail = (e as CustomEvent<{ action?: string; id?: string; profileId?: number }>).detail;
       if (detail?.action === 'back') return goBack();
       if (detail?.action === 'forward') return goForward();
+      if (detail?.action) return void runTrayAction(detail.action, detail.profileId);
       const item = SIDEBAR_NAV_ITEMS.find((i) => i.id === detail?.id);
       if (!item) return;
       if (item.href === '/bookmarks' && !requireAuth()) return;
@@ -425,6 +464,20 @@
       window.electron?.setAppMenuNav?.(SIDEBAR_NAV_ITEMS.map(({ id, label }) => ({ id, label })));
     }
     window.dispatchEvent(new CustomEvent('app:menuReady'));
+
+    // Трей: история просмотров, аккаунты и непрочитанные — меню пересобирает main-процесс
+    const syncTray = (history: boolean) => window.electron?.syncTray?.({ history });
+    syncTray(true);
+    const stopTrayUnread = notificationUnreadCount.subscribe((n) => {
+      window.electron?.syncTray?.({ unreadNotifications: n });
+    });
+    const onTrayAuthChanged = () => syncTray(true);
+    const onTrayBookmarksChanged = (e: Event) => {
+      const kind = (e as CustomEvent<{ kind?: string }>).detail?.kind;
+      if (kind === 'history') syncTray(true);
+    };
+    window.addEventListener('anix:authChanged', onTrayAuthChanged);
+    window.addEventListener('anix:bookmarksChanged', onTrayBookmarksChanged);
 
     bindSearchHotkeys();
     void restoreAdminSession();
@@ -451,6 +504,9 @@
 
     return () => {
       stopSupportInbox();
+      stopTrayUnread();
+      window.removeEventListener('anix:authChanged', onTrayAuthChanged);
+      window.removeEventListener('anix:bookmarksChanged', onTrayBookmarksChanged);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('app:openSettings', onMenuOpenSettings);
       window.removeEventListener('app:menuNavigate', onMenuNavigate);
