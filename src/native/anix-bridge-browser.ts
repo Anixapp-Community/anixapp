@@ -146,6 +146,64 @@ function h(fn: (c: BridgeCtx, ...args: any[]) => unknown): Handler {
   return async (c, args) => fn(c, ...(args ?? []));
 }
 
+function base64ToBytes(value: string): Uint8Array {
+  const base64 = value.replace(/^data:[^;]+;base64,/, '');
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Загрузка картинки в Anixart API из WebView.
+ * anixapi собирает multipart через node `form-data` (Buffer), который в Android WebView недоступен,
+ * поэтому здесь используется обычный FormData + fetch.
+ */
+async function uploadImageRequest(
+  c: BridgeCtx,
+  path: string,
+  imageBase64: string,
+  fileName = 'image.jpg',
+  fields: Record<string, string> = {},
+): Promise<Record<string, unknown>> {
+  const client = c.getClient();
+  const config = c.loadConfig();
+  const token = client?.token ?? config.token ?? '';
+  const rawBase = String(client?.getBaseUrl?.() ?? config.baseUrl ?? '');
+  const base = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
+  const url = new URL(path.replace(/^\//, ''), base);
+  if (token) url.searchParams.set('token', token);
+
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) form.append(key, value);
+  const bytes = base64ToBytes(imageBase64);
+  form.append('image', new Blob([bytes.buffer as ArrayBuffer], { type: mime }), fileName);
+
+  const headers: Record<string, string> = {};
+  if (typeof client?.userAgent === 'string' && client.userAgent) headers['User-Agent'] = client.userAgent;
+
+  const res = await fetch(url.toString(), { method: 'POST', body: form, headers });
+  const text = await res.text();
+  let parsed: Record<string, unknown> = {};
+  if (text.trim()) {
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      parsed = {};
+    }
+  }
+  if (!res.ok) {
+    const error = new Error(`HTTP ${res.status}`) as Error & { status?: number; httpStatus?: number; path?: string };
+    error.status = res.status;
+    error.httpStatus = res.status;
+    error.path = path;
+    throw error;
+  }
+  return parsed;
+}
+
 export function createBrowserAnixBridge() {
   let anixart: any = null;
 
@@ -872,9 +930,8 @@ export function createBrowserAnixBridge() {
       c.getClient().endpoints.collection.releaseCollections(releaseId, page, { sort })),
     'anix:collectionMyCreate': h((c, body) => c.getClient().endpoints.collectionMy.create(body)),
     'anix:collectionMyEdit': h((c, id, body) => c.getClient().endpoints.collectionMy.edit(id, body)),
-    'anix:collectionMyEditImage': async () => {
-      throw new Error('Загрузка изображений на Android TV пока не поддерживается');
-    },
+    'anix:collectionMyEditImage': h((c, id, imageBase64, fileName = 'cover.jpg') =>
+      uploadImageRequest(c, `/collectionMy/editImage/${id}`, String(imageBase64 ?? ''), String(fileName), { name: String(fileName) })),
     'anix:collectionMyReleaseAdd': h((c, id, releaseId) =>
       c.getClient().endpoints.collectionMy.releaseAdd(id, { release_id: releaseId })),
     'anix:collectionMyDelete': h((c, id) => c.getClient().endpoints.collectionMy.delete(id)),
@@ -1041,17 +1098,14 @@ export function createBrowserAnixBridge() {
     'anix:previewBadgeCode': h((c, code) => c.getClient().endpoints.achievement.preview(code)),
     'anix:claimBadgeCode': h((c, code, badgeId) => c.getClient().endpoints.achievement.claim(code, badgeId)),
     'anix:selectTheme': h((c, id) => c.getClient().endpoints.settings.selectTheme(id)),
-    'anix:setAvatar': async () => {
-      throw new Error('Загрузка изображений на Android TV пока не поддерживается');
-    },
+    'anix:setAvatar': h((c, imageBase64, fileName = 'image.jpg') =>
+      uploadImageRequest(c, `/profile/preference/avatar/edit`, String(imageBase64 ?? ''), String(fileName), { name: String(fileName) })),
     'anix:deleteAvatar': h((c) => c.getClient().endpoints.settings.deleteAvatar()),
-    'anix:channelUploadCover': async () => {
-      throw new Error('Загрузка изображений на Android TV пока не поддерживается');
-    },
+    'anix:channelUploadCover': h((c, channelId, imageBase64, fileName = 'image.jpg') =>
+      uploadImageRequest(c, `/channel/cover/upload/${channelId}`, String(imageBase64 ?? ''), String(fileName))),
     'anix:channelDeleteCover': h((c, channelId) => c.getClient().endpoints.channel.deleteCover(channelId)),
-    'anix:channelUploadAvatar': async () => {
-      throw new Error('Загрузка изображений на Android TV пока не поддерживается');
-    },
+    'anix:channelUploadAvatar': h((c, channelId, imageBase64, fileName = 'image.jpg') =>
+      uploadImageRequest(c, `/channel/avatar/upload/${channelId}`, String(imageBase64 ?? ''), String(fileName))),
     'anix:channelEdit': h((c, channelId, body) => c.getClient().endpoints.channel.edit(channelId, body)),
     'anix:channelBlocks': h((c, channelId, page = 0) => c.getClient().endpoints.channel.blocks(channelId, page)),
     'anix:channelBlockManage': h((c, channelId, body) =>

@@ -81,7 +81,12 @@
       validationError = `Максимум ${COMMENT_MAX_LENGTH} символов`;
       return;
     }
-    await onSubmit?.({ message: text, isSpoiler });
+    try {
+      await onSubmit?.({ message: text, isSpoiler });
+    } catch {
+      // Отправка не удалась — не очищаем текст, чтобы его не пришлось набирать заново.
+      return;
+    }
     if (resetOnSubmit) {
       message = '';
       isSpoiler = false;

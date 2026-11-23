@@ -13,6 +13,8 @@
   import MobileRail from './MobileRail.svelte';
   import MobilePullRefresh from './MobilePullRefresh.svelte';
   import UiV2MediaLightbox from '../components/uikit-v2/UiV2MediaLightbox.svelte';
+  import AccountBanBadge from '../components/AccountBanBadge.svelte';
+  import { refreshAccountBan } from '../stores/account-ban';
   import { closeFeedMediaLightbox, feedMediaLightbox } from '../utils/feed-media-lightbox';
   import { randomReleaseId, shuffleRandomRelease } from '../stores/random-release';
   import { bookmarksForeign, bookmarksSearchLabel, bookmarksSearchOpen, bookmarksSearchQuery, closeBookmarksSearch } from '../stores/mobile-bookmarks-search';
@@ -420,6 +422,7 @@
 
   onMount(() => {
     initConnectivity();
+    void refreshAccountBan();
     const stopNotifications = startNotifications();
     const stopSupportInbox = watchSupportInbox();
     // Anix+ на телефоне — раздел настроек, а не desktop-модалка (промо «Подробнее», значки и т.п.)
@@ -482,6 +485,7 @@
     <span class="m-nav-item__pill">
       {#if tab.id === 'profile' && avatarUrl && $isAuthenticated}
         <img class="m-nav-avatar" src={avatarUrl} alt="" draggable="false" onerror={() => { avatarUrl = null; }} />
+        <AccountBanBadge size={13} />
       {:else}
         {@html tab.icon}
       {/if}

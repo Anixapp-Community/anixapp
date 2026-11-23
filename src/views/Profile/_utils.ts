@@ -197,6 +197,23 @@ export function getProfileBanNotice(
   return `Пользователь был заблокирован за ${ban.reason}`;
 }
 
+/** Баннер своего профиля: «Вы были заблокированы за … до …». */
+export function getSelfBanNotice(
+  profile: ProfileBanFields | Record<string, unknown> | null | undefined,
+): string | null {
+  const ban = resolveProfileBan(profile);
+  if (!ban.active) return null;
+
+  if (ban.perm) {
+    return `Вы были заблокированы навсегда за ${ban.reason}. Часть функций недоступна.`;
+  }
+
+  const until = ban.expiresRaw > 0 ? fmtBanUntil(ban.expiresRaw) : '';
+  return until
+    ? `Вы были заблокированы за ${ban.reason} до ${until}. Часть функций недоступна.`
+    : `Вы были заблокированы за ${ban.reason}. Часть функций недоступна.`;
+}
+
 /** Короткий срок бана для списков: «навсегда», «ещё 3 дня». */
 export function getProfileBanDurationLabel(
   profile: ProfileBanFields | Record<string, unknown> | null | undefined,

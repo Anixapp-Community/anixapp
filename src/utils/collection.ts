@@ -44,7 +44,8 @@ export function initialCollectionPreviousPage(): number {
   return -1;
 }
 
-function resolveCollectionImage(raw: Record<string, unknown>): string | undefined {
+/** Обложка коллекции: полный URL, hash или картинка первого релиза. */
+export function resolveCollectionImage(raw: Record<string, unknown>): string | undefined {
   const candidates = [raw.image, raw.image_url, raw.cover];
   for (const candidate of candidates) {
     if (typeof candidate !== 'string' || !candidate.trim()) continue;
@@ -194,3 +195,15 @@ export const COLLECTION_DELETE_ERROR_MESSAGES: Record<number, string> = {
   2: 'Коллекция не найдена',
   3: 'Нет прав на удаление',
 };
+
+/** Текст ошибки сохранения коллекции: коды CollectionCreateEditResult + общие коды ответа. */
+export function collectionSaveErrorMessage(code: number): string {
+  const known = COLLECTION_CREATE_ERROR_MESSAGES[code];
+  if (known) return known;
+  switch (code) {
+    case 401: return 'Нужна авторизация — войдите в аккаунт';
+    case 402: return 'Аккаунт заблокирован — создание коллекций недоступно';
+    case 403: return 'Аккаунт заблокирован навсегда';
+    default: return `Не удалось сохранить коллекцию (код ${code})`;
+  }
+}

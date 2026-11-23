@@ -13,6 +13,7 @@
     normalizeEnforcement,
     healthStatusTitle,
     healthStatusNote,
+    lastBanLine,
     blogSuspensionLine,
     blogMuteLine,
     isCurrentlyBanned,
@@ -54,6 +55,7 @@
   const banned = $derived(status ? isCurrentlyBanned(status) : false);
   const title = $derived(status ? healthStatusTitle(status) : '…');
   const note = $derived(status ? healthStatusNote(status) : '');
+  const lastBan = $derived(status ? lastBanLine(status) : '');
   const suspensionLine = $derived(status ? blogSuspensionLine(status) : '');
   const muteLine = $derived(status ? blogMuteLine(status) : '');
   const items = $derived(tab === 'account' ? accountItems : contentItems);
@@ -66,8 +68,14 @@
     }
     loadState = 'loading';
     try {
-      const res = await window.anixApi.profileHealth.status();
-      status = normalizeHealthStatus(res as Record<string, unknown>);
+      const res = (await window.anixApi.profileHealth.status()) as Record<string, unknown>;
+      const code = Number(res?.code ?? 0);
+      if (res && 'code' in res && code !== 0) {
+        status = null;
+        loadState = 'error';
+        return;
+      }
+      status = normalizeHealthStatus(res);
       loadState = 'ready';
     } catch {
       loadState = 'error';
@@ -198,9 +206,26 @@
       </div>
 
       <ul class="pp-health__limits">
+        {#if lastBan}
+          <li class="pp-health__last-ban">{lastBan}</li>
+        {/if}
         <li>{suspensionLine}</li>
         <li>{muteLine}</li>
       </ul>
+
+      {#if banned}
+        <div class="pp-health__forbidden">
+          <p class="pp-health__forbidden-title">Пока действует блокировка, недоступны:</p>
+          <ul class="pp-health__forbidden-list">
+            <li>комментарии</li>
+            <li>создание и редактирование коллекций</li>
+            <li>публикация записей</li>
+            <li>смена аватара и никнейма</li>
+            <li>голосование</li>
+            <li>смена статуса</li>
+          </ul>
+        </div>
+      {/if}
 
       <button
         type="button"
@@ -532,6 +557,34 @@
 
   .pp-health__limits li + li {
     margin-top: 0.75rem;
+  }
+
+  .pp-health__last-ban {
+    font-weight: 600;
+  }
+
+  .pp-health__forbidden {
+    margin-top: 1rem;
+    width: min(100%, 18.75rem);
+    padding: 0.75rem 0.9rem;
+    border-radius: 0.75rem;
+    background: var(--pp-health-counter-bg);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--pp-health-fg);
+    text-align: left;
+  }
+
+  .pp-health__forbidden-title {
+    margin: 0 0 0.4rem;
+    font-weight: 600;
+    color: var(--pp-health-accent);
+  }
+
+  .pp-health__forbidden-list {
+    list-style: disc;
+    margin: 0;
+    padding-left: 1.1rem;
   }
 
   .pp-health__mean {

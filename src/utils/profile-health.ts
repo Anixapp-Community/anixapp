@@ -87,11 +87,32 @@ export function healthStatusTitle(status: ProfileHealthStatus): string {
 }
 
 export function healthStatusNote(status: ProfileHealthStatus): string {
-  if (isCurrentlyBanned(status)) return 'сейчас действуют ограничения на определенные действия';
+  if (isCurrentlyBanned(status)) {
+    const until = status.lastBanExpires > 0
+      ? ` до ${formatHistoryViewTime(status.lastBanExpires)}`
+      : '';
+    return `сейчас действуют ограничения${until}`;
+  }
   if (status.lastBanTimestamp > 0) {
     return `последний бан · ${formatHistoryViewTime(status.lastBanTimestamp)}`;
   }
   return 'банов нет';
+}
+
+/** Строка про последний бан: показывается, даже когда бан уже истёк. */
+export function lastBanLine(status: ProfileHealthStatus): string {
+  const hasHistory = status.banCount > 0 || status.lastBanTimestamp > 0 || status.lastBanExpires > 0;
+  if (!hasHistory) return '';
+  if (status.lastBanTimestamp > 0) {
+    const until = status.lastBanExpires > 0
+      ? ` · до ${formatHistoryViewTime(status.lastBanExpires)}`
+      : '';
+    return `Последний бан: ${formatHistoryViewTime(status.lastBanTimestamp)}${until}`;
+  }
+  if (status.lastBanExpires > 0) {
+    return `Последний бан: до ${formatHistoryViewTime(status.lastBanExpires)}`;
+  }
+  return 'Последний бан: дата неизвестна';
 }
 
 export function blogSuspensionLine(status: ProfileHealthStatus): string {

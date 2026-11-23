@@ -15,13 +15,14 @@
   import { showToast } from '../stores/toast';
   import { compressImageForUpload } from '../utils/compressImage';
   import {
-    COLLECTION_CREATE_ERROR_MESSAGES,
     COLLECTION_DESCRIPTION_MAX,
     COLLECTION_RELEASES_MAX,
     COLLECTION_RELEASE_SORTS,
     COLLECTION_TITLE_MAX,
     clearCollectionEditorDraft,
+    collectionSaveErrorMessage,
     loadCollectionEditorDraft,
+    resolveCollectionImage,
     saveCollectionEditorDraft,
     sortCollectionReleases,
     type CollectionReleaseSort,
@@ -30,7 +31,7 @@
   import { ensureProfileId } from '../utils/profile';
   import UiV2Tooltip from '../components/uikit-v2/UiV2Tooltip.svelte';
   import { releaseRawToStored } from '../utils/release-card';
-  import { buildPosterUrl } from '../utils/posterUrl';
+  import { formatAnixError } from '../native/anix-errors';
 
   interface Props {
     editId?: number | null;
@@ -107,7 +108,7 @@
       isPrivate = !!(info.is_private ?? info.isPrivate);
       const imageRaw = info.image as string | undefined;
       if (imageRaw) {
-        imagePreview = buildPosterUrl(imageRaw) || imageRaw;
+        imagePreview = resolveCollectionImage(info as Record<string, unknown>) || imageRaw;
       }
 
       const loaded: Record<string, unknown>[] = [];
@@ -176,6 +177,21 @@
     if (orderBeforeSort) setOrder(orderBeforeSort);
   }
 
+  /** Сервер может не вернуть `collection` в ответе create — ищем только что созданную по названию. */
+  async function findNewCollectionId(collectionTitle: string): Promise<number | null> {
+    try {
+      const selfId = await ensureProfileId();
+      if (selfId == null) return null;
+      const res = (await window.anixApi.collection.profileCollections(selfId, 0)) as Record<string, unknown>;
+      const content = Array.isArray(res?.content) ? (res.content as Record<string, unknown>[]) : [];
+      const match = content.find((item) => String(item?.title ?? '') === collectionTitle);
+      const foundId = Number(match?.id ?? 0);
+      return foundId > 0 ? foundId : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function save() {
     if (!window.anixApi?.collectionMy || !canSave) return;
     isSaving = true;
@@ -186,6 +202,9 @@
       is_private: isPrivate,
     };
 
+    let savedId: number | null = null;
+    let coverError = '';
+
     try {
       let res: Record<string, unknown>;
       if (editId) {
@@ -194,38 +213,54 @@
         res = (await window.anixApi.collectionMy.create(body)) as Record<string, unknown>;
       }
 
-      const code = res?.code as number | undefined;
-      if (code != null && code !== 0) {
-        showToast(COLLECTION_CREATE_ERROR_MESSAGES[code] ?? 'Не удалось сохранить коллекцию', 'err');
+      const code = Number(res?.code ?? 0);
+      if (code !== 0) {
+        showToast(collectionSaveErrorMessage(code), 'err');
         return;
       }
 
       const collection = (res?.collection ?? res) as Record<string, unknown>;
-      const savedId = (collection?.id ?? editId) as number | undefined;
+      const rawId = Number(collection?.id ?? collection?.['@id'] ?? res?.id ?? res?.collection_id ?? 0);
+      savedId = rawId > 0 ? rawId : editId;
       if (!savedId) {
-        showToast('Не удалось сохранить коллекцию', 'err');
+        savedId = await findNewCollectionId(body.title);
+      }
+      if (!savedId) {
+        clearCollectionEditorDraft();
+        showToast('Коллекция создана, но сервер не вернул её id — откройте «Мои коллекции»', 'err');
+        navigate('/collections/my');
         return;
       }
 
       if (imageBase64) {
-        const imgRes = (await window.anixApi.collectionMy.editImage(
-          savedId,
-          imageBase64,
-          imageFileName ?? 'cover.jpg',
-        )) as Record<string, unknown>;
-        if (imgRes?.code != null && imgRes.code !== 0) {
-          showToast('Коллекция сохранена, но обложка не загрузилась', 'err');
+        // Обложка не должна отменять уже сохранённую коллекцию (на Android загрузка может быть недоступна).
+        try {
+          const imgRes = (await window.anixApi.collectionMy.editImage(
+            savedId,
+            imageBase64,
+            imageFileName ?? 'cover.jpg',
+          )) as Record<string, unknown>;
+          if (imgRes?.code != null && Number(imgRes.code) !== 0) {
+            coverError = collectionSaveErrorMessage(Number(imgRes.code));
+          }
+        } catch (err) {
+          coverError = formatAnixError(err);
         }
       }
-
-      clearCollectionEditorDraft();
-      showToast(editId ? 'Коллекция обновлена' : 'Коллекция создана');
-      navigate(`/collection/${savedId}`);
     } catch (err) {
-      showToast(String(err), 'err');
+      showToast(formatAnixError(err), 'err');
+      return;
     } finally {
       isSaving = false;
     }
+
+    clearCollectionEditorDraft();
+    if (coverError) {
+      showToast(`Коллекция сохранена, но обложка не загрузилась: ${coverError}`, 'err');
+    } else {
+      showToast(editId ? 'Коллекция обновлена' : 'Коллекция создана');
+    }
+    navigate(`/collection/${savedId}`);
   }
 
   function goBack() {

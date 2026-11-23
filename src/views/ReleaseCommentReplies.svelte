@@ -18,7 +18,10 @@
     normalizeCommentsFromResponse,
     buildReleaseCommentAddBody,
     apiVotePayload,
+    commentAddErrorMessage,
   } from '../utils/comment';
+  import { showToast } from '../stores/toast';
+  import { formatAnixError } from '../native/anix-errors';
   import { resolveJacksonRefs } from '../utils/jackson-refs';
   import {
     appendUiV2CommentReply,
@@ -226,7 +229,7 @@
         }),
       )) as { comment?: Record<string, unknown>; code?: number };
 
-      if (res.code != null && res.code !== 0) throw new Error(String(res.code));
+      if (res.code != null && res.code !== 0) throw new Error(commentAddErrorMessage(Number(res.code)));
 
       if (res.comment) {
         const resolvedAdd = resolveJacksonRefs(res) as Record<string, unknown>;
@@ -244,8 +247,9 @@
         dockReplyParent = null;
         dockReplyLogin = null;
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      showToast(formatAnixError(err), 'err');
+      throw err;
     } finally {
       submitting = false;
     }

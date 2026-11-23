@@ -19,6 +19,8 @@
   import ConnectionBanner from './ConnectionBanner.svelte';
   import TitleBarSearchIsland from './TitleBarSearchIsland.svelte';
   import UiV2Tooltip from './uikit-v2/UiV2Tooltip.svelte';
+  import AccountBanBadge from './AccountBanBadge.svelte';
+  import { refreshAccountBan, resetAccountBan } from '../stores/account-ban';
 
   const hasWindowApi = typeof (window as any).electron?.window !== 'undefined';
 
@@ -113,6 +115,7 @@
 
   onMount(() => {
     syncAvatarFromGlobalProfile();
+    void refreshAccountBan();
     void loadAppVersion();
     void loadWindowBehavior();
     void loadWindowState();
@@ -162,6 +165,7 @@
     window.addEventListener('app-update-progress', onProgress);
     const onProfileUpdated = () => {
       syncAvatarFromGlobalProfile();
+      void refreshAccountBan(true);
     };
     window.addEventListener('anix:profileUpdated', onProfileUpdated);
 
@@ -175,6 +179,7 @@
         notificationUnreadCount.set(0);
         resetDeviceNotificationBaseline();
         avatarUrl = null;
+        resetAccountBan();
       }
     });
     void refreshNotificationUnreadCount();
@@ -429,6 +434,7 @@
           style={avatarUrl ? `background-image:url(${avatarUrl})` : ''}
         >
           {#if !avatarUrl}{@html iconUser(16)}{/if}
+          <AccountBanBadge size={14} />
         </span>
       </button>
     </UiV2Tooltip>

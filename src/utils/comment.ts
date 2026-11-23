@@ -439,3 +439,20 @@ export function buildReleaseCommentAddBody(
     replyToProfileId: replyTarget?.profile.id ?? null,
   };
 }
+
+/** Понятный текст для кода CommentAddResult (и общих кодов ответа). */
+export function commentAddErrorMessage(code: number): string {
+  switch (code) {
+    case 2: return 'Комментарии здесь недоступны';
+    case 3: return 'Комментарий не найден';
+    case 4: return 'Профиль не найден';
+    case 5: return 'Комментарий слишком короткий';
+    case 6: return 'Комментарий слишком длинный';
+    case 7: return 'Достигнут лимит комментариев';
+    case 8: return 'Вы в блоклисте у автора — комментарий недоступен';
+    case 401: return 'Нужна авторизация — войдите в аккаунт';
+    case 402: return 'Аккаунт заблокирован — отправка комментариев недоступна';
+    case 403: return 'Аккаунт заблокирован навсегда';
+    default: return `Не удалось отправить комментарий (код ${code})`;
+  }
+}

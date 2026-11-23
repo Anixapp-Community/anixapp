@@ -13,7 +13,9 @@
   } from '../uikit-v2/UiV2CommentComposer.svelte';
   import CommentsLoadSentinel from './CommentsLoadSentinel.svelte';
   import type { CommentData, CommentVoteValue } from '../../types/comment';
-  import { normalizeComment, normalizeCommentsFromResponse, buildReleaseCommentAddBody, apiVotePayload } from '../../utils/comment';
+  import { normalizeComment, normalizeCommentsFromResponse, buildReleaseCommentAddBody, apiVotePayload, commentAddErrorMessage } from '../../utils/comment';
+  import { showToast } from '../../stores/toast';
+  import { formatAnixError } from '../../native/anix-errors';
   import { resolveJacksonRefs } from '../../utils/jackson-refs';
   import {
     appendUiV2CommentReply,
@@ -201,7 +203,9 @@
         buildReleaseCommentAddBody(payload, { replyTarget }),
       )) as { comment?: Record<string, unknown>; code?: number };
 
-      if (res.code != null && res.code !== 0) throw new Error(String(res.code));
+      if (res.code != null && res.code !== 0) {
+        throw new Error(commentAddErrorMessage(Number(res.code)));
+      }
 
       if (res.comment) {
         const resolved = resolveJacksonRefs(res) as Record<string, unknown>;
@@ -215,9 +219,14 @@
         onCommentAdded?.(uiV2NodeToCommentData(added));
         dockReplyParent = null;
         dockReplyLogin = null;
+      } else {
+        // Сервер принял комментарий, но не вернул тело — список обновится при следующей загрузке.
+        showToast('Комментарий отправлен', 'ok');
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // Не глотаем ошибку: иначе композер очищается и кажется, что комментарий ушёл.
+      showToast(formatAnixError(err), 'err');
+      throw err;
     } finally {
       submitting = false;
     }
@@ -251,7 +260,8 @@
         message: payload.message,
         isSpoiler: payload.isSpoiler,
       });
-    } catch {
+    } catch (err) {
+      showToast(formatAnixError(err), 'err');
       syncItems(
         patchUiV2CommentNode(nodes, node.id, {
           message: prev.message,
@@ -278,7 +288,8 @@
 
     try {
       await commentsApi.delete(id);
-    } catch {
+    } catch (err) {
+      showToast(formatAnixError(err), 'err');
       syncItems(
         patchUiV2CommentNode(nodes, node.id, {
           isDeleted: prev.isDeleted,

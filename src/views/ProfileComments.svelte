@@ -26,11 +26,14 @@
   import {
     apiVotePayload,
     buildReleaseCommentAddBody,
+    commentAddErrorMessage,
     mapProfileCommentPreview,
     normalizeComment,
     normalizeCommentsFromResponse,
     type ProfileCommentPreviewItem,
   } from '../utils/comment';
+  import { showToast } from '../stores/toast';
+  import { formatAnixError } from '../native/anix-errors';
   import { setDiscordContext, refreshDiscordPresence } from '../services/discord-presence';
   import UiV2ContentRetryOverlay from '../components/uikit-v2/UiV2ContentRetryOverlay.svelte';
   import { headlineFromLoadError } from '../utils/content-load-error';
@@ -192,14 +195,15 @@
         replyTarget: uiV2NodeToCommentData(node),
         threadRootCommentId: Number(root.id),
       })) as { code?: number; comment?: Record<string, unknown> };
-      if (res?.code != null && res.code !== 0) throw new Error(String(res.code));
+      if (res?.code != null && res.code !== 0) throw new Error(commentAddErrorMessage(Number(res.code)));
       if (res?.comment) {
         const resolved = resolveJacksonRefs(res) as Record<string, unknown>;
         const added = commentDataToUiV2Node(normalizeComment((resolved.comment ?? res.comment) as Record<string, unknown>, resolved));
         setNodes(appendUiV2CommentReply(nodes, root.id, added));
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      showToast(formatAnixError(err), 'err');
+      throw err;
     }
   }
 

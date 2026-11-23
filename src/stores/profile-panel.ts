@@ -192,6 +192,17 @@ export function openProfileBadgePanel(): void {
   openProfilePanel(id);
 }
 
+/**
+ * Открыть «Здоровье аккаунта» (ограничения и история банов) в панели своего профиля.
+ * Используется баннером «Аккаунт заблокирован» и бейджем на аватаре.
+ */
+export function openProfileHealthPanel(): void {
+  const id = Number((window as { __anixProfile?: { id?: number } }).__anixProfile?.id ?? 0);
+  if (!Number.isFinite(id) || id <= 0) return;
+  profilePanelPendingEditScreen.set('health');
+  openProfilePanel(id);
+}
+
 export function setProfilePanelInnerView(view: ProfilePanelInnerView): void {
   profilePanelInnerView.set(view);
 }

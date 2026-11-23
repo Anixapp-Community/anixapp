@@ -56,6 +56,13 @@ export function setMobilePlayerPrefs(prefs: MobilePlayerPrefs): void {
   } catch { /* ignore */ }
 }
 
+/** Сбросить запомненный способ воспроизведения — окно выбора появится при следующем запуске. */
+export function resetMobilePlayerPrefs(): void {
+  try {
+    localStorage.removeItem(PREFS_KEY);
+  } catch { /* ignore */ }
+}
+
 export function needsExternalPlaylistRange(episodeCount: number): boolean {
   return episodeCount > EXTERNAL_PLAYLIST_ASK_THRESHOLD;
 }

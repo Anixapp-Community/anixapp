@@ -10,10 +10,13 @@
   import { handleUserProfileClick } from '../../stores/user-profile';
   import {
     buildReleaseCommentAddBody,
+    commentAddErrorMessage,
     normalizeComment,
     normalizeCommentsFromResponse,
     apiVotePayload,
   } from '../../utils/comment';
+  import { showToast } from '../../stores/toast';
+  import { formatAnixError } from '../../native/anix-errors';
   import type { CommentVoteValue } from '../../types/comment';
   import {
     appendUiV2CommentReply,
@@ -148,7 +151,9 @@
         articleId,
         buildReleaseCommentAddBody(payload, { replyTarget }),
       )) as { code?: number; comment?: Record<string, unknown> };
-      if (res.code != null && res.code !== 0) return;
+      if (res.code != null && res.code !== 0) {
+        throw new Error(commentAddErrorMessage(Number(res.code)));
+      }
       if (res.comment) {
         const resolved = resolveJacksonRefs(res) as Record<string, unknown>;
         const raw = (resolved.comment ?? res.comment) as Record<string, unknown>;
@@ -167,8 +172,10 @@
         knownTotal += 1;
         onCountChange?.(knownTotal);
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // Без этого композер очищается и кажется, что комментарий отправлен.
+      showToast(formatAnixError(err), 'err');
+      throw err;
     } finally {
       submitting = false;
     }

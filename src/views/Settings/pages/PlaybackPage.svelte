@@ -3,6 +3,20 @@
   import UiV2Toggle from '../../../components/uikit-v2/UiV2Toggle.svelte';
   import UiV2SettingsRow from '../../../components/uikit-v2/UiV2SettingsRow.svelte';
   import UiV2Button from '../../../components/uikit-v2/UiV2Button.svelte';
+  import { showToast } from '../../../stores/toast';
+  import {
+    getMobilePlayerPrefs,
+    resetMobilePlayerPrefs,
+    setMobilePlayerPrefs,
+    type MobilePlayerKind,
+  } from '../../../utils/mobile-player';
+  import {
+    getPreferredExternalPlayerId,
+    listExternalPlayers,
+    setPreferredExternalPlayerId,
+    type ExternalPlayerId,
+    type ExternalPlayerOption,
+  } from '../../../utils/player-integration';
   import {
     DEFAULT_PLAYER_HOTKEYS,
     REWIND_SECONDS_MAX,
@@ -72,6 +86,59 @@
   let hotkeys = $state<PlayerHotkeysSettings>({ ...DEFAULT_PLAYER_HOTKEYS });
   let capturing = $state<BindField | null>(null);
   let playbackLoaded = $state(false);
+
+  const PLAYER_KIND_OPTIONS: { id: MobilePlayerKind; label: string; desc: string }[] = [
+    { id: 'web', label: 'Веб-плеер', desc: 'Плеер источника, без установки' },
+    { id: 'builtin', label: 'Встроенный', desc: 'Поток прямо в приложении' },
+    { id: 'external', label: 'Сторонний', desc: 'VLC, mpv, PotPlayer…' },
+  ];
+
+  let playerPrefs = $state(getMobilePlayerPrefs());
+  let preferredExternal = $state<ExternalPlayerId | null>(getPreferredExternalPlayerId());
+  let externalPlayers = $state<ExternalPlayerOption[]>([]);
+  let externalLoading = $state(false);
+
+  function savePlayerPrefs(kind: MobilePlayerKind, ask: boolean) {
+    setMobilePlayerPrefs({ kind, ask });
+    playerPrefs = { kind, ask };
+    window.dispatchEvent(new CustomEvent('anix:playerPrefsChanged', { detail: { kind, ask } }));
+  }
+
+  function selectPlayerKind(kind: MobilePlayerKind) {
+    savePlayerPrefs(kind, playerPrefs.ask);
+    if (kind === 'external' && externalPlayers.length === 0) void loadExternal(true);
+  }
+
+  function selectExternalPlayer(id: ExternalPlayerId) {
+    preferredExternal = id;
+    setPreferredExternalPlayerId(id);
+  }
+
+  async function loadExternal(fresh = false) {
+    externalLoading = true;
+    try {
+      const res = await listExternalPlayers({ fresh });
+      externalPlayers = res.installed;
+      const stillInstalled = preferredExternal && externalPlayers.some((p) => p.id === preferredExternal);
+      if (!stillInstalled) {
+        // Не перезаписываем сохранённый выбор молча — main сам возьмёт первый установленный.
+        preferredExternal = externalPlayers[0]?.id ?? null;
+      }
+    } catch {
+      externalPlayers = [];
+    } finally {
+      externalLoading = false;
+    }
+  }
+
+  function resetPlayerChoice() {
+    resetMobilePlayerPrefs();
+    setPreferredExternalPlayerId(null);
+    playerPrefs = { kind: 'builtin', ask: true };
+    preferredExternal = null;
+    window.dispatchEvent(new CustomEvent('anix:playerPrefsChanged', { detail: { kind: 'builtin', ask: true } }));
+    showToast('Выбор сброшен — окно выбора плеера появится при следующем запуске');
+  }
 
   // Телефон и планшет: только лёгкие режимы, без «Максимум», разрешение обработки всегда 1080p
   const touchUi = isMobileMode();
@@ -178,6 +245,7 @@
 
   onMount(() => {
     void loadPlayback();
+    void loadExternal(false);
     window.addEventListener('keydown', onCaptureKey, true);
     return () => window.removeEventListener('keydown', onCaptureKey, true);
   });
@@ -189,6 +257,84 @@
   {:else if !playbackLoaded}
     <p class="uiv2-settings__status">Загрузка…</p>
   {:else}
+    <section class="uiv2-settings__block">
+      <h3 class="uiv2-settings__title">Способ воспроизведения</h3>
+      <p class="uiv2-settings__desc">
+        Чем открывать серии. Выбор запоминается; окно выбора можно вернуть кнопкой ниже.
+      </p>
+      <div class="uiv2-settings__group">
+        <UiV2SettingsRow
+          stack
+          title="Плеер"
+          desc={PLAYER_KIND_OPTIONS.find((opt) => opt.id === playerPrefs.kind)?.desc ?? ''}
+        >
+          <div class="uiv2-settings__chips" role="radiogroup" aria-label="Способ воспроизведения">
+            {#each PLAYER_KIND_OPTIONS as opt (opt.id)}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={playerPrefs.kind === opt.id}
+                class="uiv2-settings__chip"
+                class:uiv2-settings__chip--on={playerPrefs.kind === opt.id}
+                onclick={() => selectPlayerKind(opt.id)}
+              >{opt.label}</button>
+            {/each}
+          </div>
+
+          {#if playerPrefs.kind === 'external'}
+            {#if touchOnly}
+              <p class="uiv2-settings__hint">Откроется системное окно выбора приложения — VLC, MX Player и другие установленные плееры.</p>
+            {:else}
+              {#if externalLoading}
+                <p class="uiv2-settings__hint">Проверяем установленные плееры…</p>
+              {:else if externalPlayers.length}
+                <div class="uiv2-settings__chips" role="radiogroup" aria-label="Сторонний плеер">
+                  {#each externalPlayers as player (player.id)}
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={preferredExternal === player.id}
+                      class="uiv2-settings__chip"
+                      class:uiv2-settings__chip--on={preferredExternal === player.id}
+                      onclick={() => selectExternalPlayer(player.id)}
+                    >{player.label}</button>
+                  {/each}
+                </div>
+              {:else}
+                <p class="uiv2-settings__hint">
+                  Установленные плееры не найдены — поставьте VLC, mpv или PotPlayer и обновите список.
+                </p>
+              {/if}
+              <UiV2Button
+                label="Обновить список"
+                variant="chrome"
+                size="sm"
+                onclick={() => void loadExternal(true)}
+              />
+            {/if}
+          {/if}
+        </UiV2SettingsRow>
+
+        <UiV2SettingsRow
+          title="Спрашивать перед запуском"
+          desc="Показывать окно «Выберите плеер» перед каждой серией."
+        >
+          <UiV2Toggle
+            label="Спрашивать перед запуском"
+            checked={playerPrefs.ask}
+            onChange={(checked) => savePlayerPrefs(playerPrefs.kind, checked)}
+          />
+        </UiV2SettingsRow>
+
+        <UiV2SettingsRow
+          title="Сбросить запомненный выбор"
+          desc="Удалить сохранённый способ и сторонний плеер — окно выбора появится снова."
+        >
+          <UiV2Button label="Сбросить" variant="chrome" size="sm" onclick={resetPlayerChoice} />
+        </UiV2SettingsRow>
+      </div>
+    </section>
+
     <!-- Anime4K — главное отличие плеера, поэтому первым -->
     <section class="uiv2-settings__block">
       <h3 class="uiv2-settings__title">Anime4K</h3>

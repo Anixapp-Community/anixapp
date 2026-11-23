@@ -94,7 +94,7 @@
       rows: [
         { tab: 'appearance', title: 'Внешний вид', sub: 'Тема, масштаб, вид списков и навигация', icon: iconPalette },
         { tab: 'notifications', title: 'Уведомления', sub: 'Баннеры, звук и типы уведомлений', icon: iconBell },
-        { tab: 'playback', title: 'Воспроизведение', sub: 'Anime4K, звук и горячие клавиши', icon: iconPlay },
+        { tab: 'playback', title: 'Воспроизведение', sub: 'Плеер, Anime4K, звук и горячие клавиши', icon: iconPlay },
         { tab: 'connection', title: 'Соединение', sub: 'Сервер API', icon: iconGlobe },
         { title: 'Загрузки', sub: 'Скачанные серии для просмотра без сети', icon: iconDownload, action: () => { close(); navigate('/downloads'); } },
       ],

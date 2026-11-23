@@ -676,6 +676,7 @@
 }
 
 .titlebar__avatar {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -683,7 +684,7 @@
   height: 24px;
   border-radius: 999px;
   background: $color-surface-hover;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .titlebar__avatar--placeholder {

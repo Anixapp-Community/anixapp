@@ -27,6 +27,7 @@
     fmtDate,
     fmtLastSeen,
     getProfileBanNotice,
+    getSelfBanNotice,
     isLottieBadgeUrl,
     posterUrl,
   } from '../views/Profile/_utils';
@@ -203,7 +204,9 @@
   const showPrivacy = $derived(
     profile && !blockedByUser ? hasProfilePrivacyRestrictions(profile, isMyProfile) : false,
   );
-  const banNotice = $derived(getProfileBanNotice(profile));
+  const banNotice = $derived(
+    isMyProfile ? getSelfBanNotice(profile) : getProfileBanNotice(profile),
+  );
   const friendNamesPreview = $derived.by(() => {
     const names = friends
       .map((f) => String(f.login ?? '').trim())
@@ -973,7 +976,16 @@
                   <span class="profile-panel__ban-alert-icon" aria-hidden="true">
                     {@html iconMessageSquareX(18)}
                   </span>
-                  <p class="profile-panel__ban-alert-text">{banNotice}</p>
+                  <div class="profile-panel__ban-alert-body">
+                    <p class="profile-panel__ban-alert-text">{banNotice}</p>
+                    {#if isMyProfile}
+                      <button
+                        type="button"
+                        class="profile-panel__ban-alert-more"
+                        onclick={() => openEditView('health')}
+                      >Подробнее</button>
+                    {/if}
+                  </div>
                 </div>
               {/if}
 

@@ -485,6 +485,8 @@
   let pendingExternalPlayerId = $state<ExternalPlayerId | null>(null);
   /** Окно «Выберите плеер» открыто только для смены плеера по умолчанию (без запуска серии). */
   let chooserSettings = $state(false);
+  /** ПК: окно «Выберите плеер» открыто вручную (без запуска серии). */
+  let desktopChooserSettings = $state(false);
   let playerLabel = $state(playerKindLabel(getMobilePlayerPrefs().kind));
   function cancelExternalPlaylistPrep() {
     externalAbort?.abort();
@@ -594,8 +596,15 @@
 
   function onDesktopChooserDone(kind: MobilePlayerKind, remember: boolean, playerId?: ExternalPlayerId) {
     const ep = desktopChooserEp;
+    const settingsMode = desktopChooserSettings;
     desktopChooserEp = null;
-    if (remember) {
+    desktopChooserSettings = false;
+    playerLabel = playerKindLabel(kind);
+    if (settingsMode) {
+      // Ручной выбор из настроек плеера: способ сохраняем всегда, «спрашивать» — по тумблеру.
+      setMobilePlayerPrefs({ kind, ask: !remember });
+      if (kind === 'external' && playerId) setPreferredExternalPlayerId(playerId);
+    } else if (remember) {
       setMobilePlayerPrefs({ kind, ask: false });
       if (kind === 'external' && playerId) setPreferredExternalPlayerId(playerId);
     }
@@ -1293,6 +1302,7 @@
                 />
               {:else}
                 <div class="watch-modal__desk-actions">
+                  <UiV2Button label="Плеер" ariaHaspopup="dialog" onclick={() => (desktopChooserSettings = true)} />
                   {#if nextEpisode}
                     {@const nextNum = episodeDisplayNumber(nextEpisode, episodes)}
                     <UiV2Button
@@ -1609,8 +1619,11 @@
       <MobilePlayerChooser onChoose={onChooserDone} onClose={() => { chooserEp = null; chooserSettings = false; }} />
     {/if}
 
-    {#if !isMobile && desktopChooserEp !== null}
-      <DesktopPlayerChooser onChoose={onDesktopChooserDone} onClose={() => (desktopChooserEp = null)} />
+    {#if !isMobile && (desktopChooserEp !== null || desktopChooserSettings)}
+      <DesktopPlayerChooser
+        onChoose={onDesktopChooserDone}
+        onClose={() => { desktopChooserEp = null; desktopChooserSettings = false; }}
+      />
     {/if}
 
     {#if externalRangeEp !== null && externalProgress === null}

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { openSettingsModal } from '../../../../stores/modals';
-  import { fmtRelative, getProfileBanNotice, isLottieBadgeUrl, posterUrl } from '../../_utils';
+  import { fmtRelative, getProfileBanNotice, getSelfBanNotice, isLottieBadgeUrl, posterUrl } from '../../_utils';
+  import { openProfileHealthPanel } from '../../../../stores/profile-panel';
   import { fetchCdnJson, toCdnProxyUrl } from '../../../../utils/posterUrl';
   import { iconBan } from '../../../../components/icons';
   import AppBadges from '../../../../components/AppBadges.svelte';
@@ -16,7 +17,7 @@
 
   let { profile, coverUrl, isMyProfile, onOpenSocial }: Props = $props();
 
-  const banNotice = $derived(getProfileBanNotice(profile));
+  const banNotice = $derived(isMyProfile ? getSelfBanNotice(profile) : getProfileBanNotice(profile));
 
   // ── Lottie badge ────────────────────────────────────────────────────────
   let badgeLottieEl = $state<HTMLElement | undefined>();
@@ -136,6 +137,11 @@
         <div class="profile__ban" role="status">
           <span class="profile__ban-icon" aria-hidden="true">{@html iconBan(18)}</span>
           <p class="profile__ban-text">{banNotice}</p>
+          {#if isMyProfile}
+            <button type="button" class="profile__ban-more" onclick={() => openProfileHealthPanel()}>
+              Подробнее
+            </button>
+          {/if}
         </div>
       {/if}
 

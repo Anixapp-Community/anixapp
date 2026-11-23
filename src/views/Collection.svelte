@@ -15,6 +15,7 @@
     iconBookmark,
     iconCopy,
     iconInfo,
+    iconImage,
     iconLock,
     iconMessageCircle,
     iconMoreHorizontal,
@@ -26,12 +27,11 @@
   import { requireAuth } from '../stores/auth';
   import { handleUserProfileClick } from '../stores/user-profile';
   import { showToast } from '../stores/toast';
-  import { COLLECTION_DELETE_ERROR_MESSAGES } from '../utils/collection';
+  import { COLLECTION_DELETE_ERROR_MESSAGES, resolveCollectionImage } from '../utils/collection';
   import { setDiscordContext, refreshDiscordPresence } from '../services/discord-presence';
   import { ensureProfileId } from '../utils/profile';
   import type { ReleaseCardData } from '../types/release';
   import type { CommentData } from '../types/comment';
-  import { buildPosterUrl } from '../utils/posterUrl';
   import { mapReleaseRawToCard } from '../utils/release-card';
   import { normalizeCommentsFromResponse } from '../utils/comment';
   import { normalizeArticleBaseUrl } from '../utils/feed-article-menu';
@@ -319,7 +319,8 @@
 
       collectionTitle = info.title || 'Без названия';
       collectionDesc = info.description || '';
-      collectionImage = info.image || '';
+      // Сервер отдаёт hash обложки коллекции — его нельзя собирать через buildPosterUrl (/posters/).
+      collectionImage = resolveCollectionImage(info as Record<string, unknown>) || String(info.image ?? '');
       collectionCoverAnimation = typeof info.cover_animation === 'string' ? info.cover_animation : '';
       isPrivate = !!(info.is_private ?? info.isPrivate);
       creationDate = info.creation_date ?? 0;
@@ -345,7 +346,7 @@
 
       setDiscordContext({
         collectionTitle: collectionTitle,
-        collectionImage: collectionImage ? buildPosterUrl(collectionImage) : undefined,
+        collectionImage: collectionImage || undefined,
       });
       refreshDiscordPresence();
 
@@ -395,8 +396,13 @@
     <div class="collection-page">
       <div class="collection-cover">
         {#if collectionImage}
-          <img src={buildPosterUrl(collectionImage)} alt="" loading="eager" />
+          <img src={collectionImage} alt="" loading="eager" />
           <AnimatedMediaOverlay src={collectionCoverAnimation} />
+        {:else}
+          <div class="collection-cover__placeholder">
+            {@html iconImage(20)}
+            <span>Без обложки</span>
+          </div>
         {/if}
       </div>
 
