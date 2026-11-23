@@ -118,4 +118,22 @@ function createMainWindow(deps) {
   state.mainWindow.on('closed', () => { state.mainWindow = null; });
 }
 
-module.exports = { createMainWindow };
+/**
+ * Показывает главное окно и отправляет ему сообщение (меню приложения, трей).
+ * Окно может быть закрыто при живом приложении — тогда создаём заново и отправляем после загрузки.
+ */
+function showMainWindowAndSend(deps, channel, payload) {
+  if (!state.mainWindow) {
+    createMainWindow(deps);
+    const win = state.mainWindow;
+    win?.webContents.once('did-finish-load', () => {
+      if (!win.isDestroyed()) win.webContents.send(channel, payload);
+    });
+    return;
+  }
+  state.mainWindow.show();
+  state.mainWindow.focus();
+  state.mainWindow.webContents.send(channel, payload);
+}
+
+module.exports = { createMainWindow, showMainWindowAndSend };

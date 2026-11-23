@@ -2,7 +2,7 @@
 
 const { Menu, app, ipcMain } = require('electron');
 const state = require('../lib/app-state');
-const { createMainWindow } = require('./main-window');
+const { showMainWindowAndSend } = require('./main-window');
 
 // app.name в dev берётся из package.json («anixapp»), поэтому название задано явно.
 const APP_NAME = 'AnixApp';
@@ -29,21 +29,7 @@ function sanitizeNavItems(raw) {
 function setupAppMenu(deps) {
   if (process.platform !== 'darwin') return;
 
-  // Показывает главное окно и отправляет ему сообщение из меню.
-  const sendToMainWindow = (channel, payload) => {
-    // Окно может быть закрыто при живом приложении — создаём заново и отправляем после загрузки.
-    if (!state.mainWindow) {
-      createMainWindow(deps);
-      const win = state.mainWindow;
-      win?.webContents.once('did-finish-load', () => {
-        if (!win.isDestroyed()) win.webContents.send(channel, payload);
-      });
-      return;
-    }
-    state.mainWindow.show();
-    state.mainWindow.focus();
-    state.mainWindow.webContents.send(channel, payload);
-  };
+  const sendToMainWindow = (channel, payload) => showMainWindowAndSend(deps, channel, payload);
 
   const openSettings = () => sendToMainWindow('app:openSettings');
 
