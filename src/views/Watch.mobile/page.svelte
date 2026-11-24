@@ -9,8 +9,9 @@
   import { getWatchParams } from '../../router';
   import { navigate } from '../../stores/navigation';
   import { PlayerCore } from '../Watch/core/PlayerCore';
+  import { refererForMediaUrl } from '../Watch/core/hls-media-context';
   import { getFluoPlayer, installWindowFluo } from '../../fluo';
-  import { allowsIframeFallback, userPlaybackError } from '../Watch/_utils';
+  import { allowsIframeFallback, backupMediaProxyUrl, userPlaybackError } from '../Watch/_utils';
   import {
     buildTimelineSausages,
     clampSkipMarksToDuration,
@@ -605,6 +606,15 @@
       return;
     }
 
+    const proxyUrl = nextUseVideo && isCapacitorNative()
+      ? backupMediaProxyUrl(nextUrl, refererForMediaUrl(nextUrl))
+      : null;
+    const usingBackupProxy = nextUseVideo && /\/tv\/media\?/.test(nextUrl);
+    const retryThroughProxy = (savedTime?: number, wasPaused?: boolean) => {
+      if (!proxyUrl) return false;
+      applyMedia(proxyUrl, true, nextEpPos, savedTime, wasPaused);
+      return true;
+    };
     core.applySource({
       url: nextUrl,
       useVideo: nextUseVideo,
@@ -621,6 +631,7 @@
       syncPlaybackRate: () => { if (videoEl) videoEl.playbackRate = playbackRate; },
       onFallback: () => {
         switching = false;
+        if (retryThroughProxy(videoEl?.currentTime ?? seekTime, videoEl?.paused ?? initialPaused)) return;
         if (core.origEpUrl && allowsIframeFallback(core.origEpUrl)) {
           applyMedia(core.origEpUrl, false, nextEpPos, seekTime, initialPaused);
           return;
@@ -628,6 +639,8 @@
         showError(core.origEpUrl || nextUrl);
       },
       onReresolve: (savedTime, wasPaused) => {
+        if (retryThroughProxy(savedTime, wasPaused)) return;
+        if (usingBackupProxy) { showError(core.origEpUrl || nextUrl); return; }
         const embed = core.origEpUrl;
         if (!embed) return;
         core.invalidateCache(embed);
@@ -637,6 +650,7 @@
         }).catch(() => applyMedia(embed, false, nextEpPos, savedTime, wasPaused));
       },
       onWatchdogReresolve: async () => {
+        if (usingBackupProxy) return null;
         const embed = core.origEpUrl;
         if (!embed) return null;
         core.invalidateCache(embed);

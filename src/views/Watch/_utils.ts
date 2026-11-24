@@ -96,6 +96,18 @@ function shouldUseTvMediaProxy(): boolean {
 }
 
 /** CDN/HLS через same-origin прокси (браузер LAN + Electron dev). Prod TV (browser + APK) → api.anixapp.com/tv/media. */
+export function backupMediaProxyUrl(url: string, referer?: string): string | null {
+  if (!url || isUnplayableVideoSrc(url)) return null;
+  try {
+    const parsed = new URL(url);
+    if (!/^https?:$/.test(parsed.protocol) || !hostNeedsMediaProxy(parsed.hostname)
+      || parsed.pathname === '/tv/media' || parsed.pathname === '/__anix/media') return null;
+    return tvBridgeMediaUrl(parsed.href, referer);
+  } catch {
+    return null;
+  }
+}
+
 export function toCorsSafePlayUrl(url: string, referer?: string): string {
   const tvProxy = shouldUseTvMediaProxy();
   // Live dev APK on LAN: native WebView intercept. Prod TV: server-side media proxy (как в браузере).

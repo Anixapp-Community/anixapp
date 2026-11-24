@@ -23,12 +23,7 @@ function isCapacitor(): boolean {
 }
 
 function normalizeKodikEmbedUrl(embedUrl: string): string {
-  let url = embedUrl.startsWith('http') ? embedUrl : `https:${embedUrl}`;
-  try {
-    const u = new URL(url);
-    url = u.origin + u.pathname;
-  } catch { /* keep */ }
-  return url;
+  return embedUrl.startsWith('http') ? embedUrl : `https:${embedUrl}`;
 }
 
 function decryptKodikSrc(src: string): string {
