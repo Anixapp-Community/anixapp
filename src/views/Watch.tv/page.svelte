@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount, tick, untrack } from 'svelte';
+  import { isCustomSourceId } from '../../../electron/lib/custom-sources.mjs';
   import { getWatchParams } from '../../router';
   import { navigate } from '../../stores/navigation';
   import { PlayerCore } from '../Watch/core/PlayerCore';
   import { getFluoPlayer, installWindowFluo } from '../../fluo';
-  import { allowsIframeFallback, userPlaybackError } from '../Watch/_utils';
+  import { allowsIframeFallback, toCorsSafePlayUrl, userPlaybackError } from '../Watch/_utils';
   import {
     buildTimelineSausages,
     clampSkipMarksToDuration,
@@ -689,7 +690,7 @@
     const api = window.anixApi?.release;
     if (!api?.getEpisodes || rId == null || sId == null || dId == null) return [];
     const res = await api.getEpisodes(rId, dId, sId);
-    return (res?.episodes ?? []).filter((row: Episode) => !!row?.url);
+    return (res?.episodes ?? []).filter((row: Episode) => !!row?.url || isCustomSourceId(sId));
   }
 
   async function loadEpisode(nextEp: number, seekTime?: number, initialPaused?: boolean) {
@@ -724,8 +725,14 @@
       const resolved = await core.resolve(episode.url, episode.iframe);
       if (myGen !== episodeLoadGen) return;
       applySkipMarks(resolved.skip);
-      qualityMap = resolved.qualityMap ?? {};
-      currentQuality = resolved.currentQuality || 'auto';
+      const epQualityMap = (episode as Episode & { qualityMap?: Record<string, string> }).qualityMap;
+      const epCurrentQuality = (episode as Episode & { currentQuality?: string }).currentQuality;
+      qualityMap = epQualityMap
+        ? Object.fromEntries(
+            Object.entries(epQualityMap).map(([q, qUrl]) => [q, toCorsSafePlayUrl(qUrl)]),
+          )
+        : (resolved.qualityMap ?? {});
+      currentQuality = epCurrentQuality || resolved.currentQuality || 'auto';
       applyMedia(resolved.playUrl, resolved.useVideo, nextEp, seekTime, initialPaused);
       void window.anixApi?.history?.markWatched?.(rId, sId, nextEp);
     } catch {

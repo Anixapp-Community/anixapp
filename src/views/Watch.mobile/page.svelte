@@ -13,7 +13,7 @@
   import type { StreamQuality } from '../Watch/core/hls-engine';
   import { refererForMediaUrl } from '../Watch/core/hls-media-context';
   import { getFluoPlayer, installWindowFluo } from '../../fluo';
-  import { allowsIframeFallback, backupMediaProxyUrl, userPlaybackError } from '../Watch/_utils';
+  import { allowsIframeFallback, backupMediaProxyUrl, toCorsSafePlayUrl, userPlaybackError } from '../Watch/_utils';
   import {
     buildTimelineSausages,
     clampSkipMarksToDuration,
@@ -710,7 +710,11 @@
       if (myGen !== episodeLoadGen) return;
       skipDismissedKind = null;
       skipMarks = normalizeSkipMarks(resolved.skip);
-      qualityMap = episode.qualityMap ?? resolved.qualityMap ?? {};
+      qualityMap = episode.qualityMap
+        ? Object.fromEntries(
+            Object.entries(episode.qualityMap).map(([q, qUrl]) => [q, toCorsSafePlayUrl(qUrl)]),
+          )
+        : (resolved.qualityMap ?? {});
       currentQuality = episode.currentQuality || resolved.currentQuality || 'auto';
       applyMedia(resolved.playUrl, resolved.useVideo, nextEpPos, seekTime, initialPaused);
       void window.anixApi?.history?.markWatched?.(rId, sId, nextEpPos);

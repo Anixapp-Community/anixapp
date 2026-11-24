@@ -152,7 +152,9 @@
     const counts: Record<string, number> = {};
     for (const source of rows) {
       const label = !isCustomSourceId(source.id) ? 'Anixart'
-        : source.name.includes('(YummyAnime)') ? 'YummyAnime' : 'AniType';
+        : source.name.includes('(YummyAnime)') ? 'YummyAnime'
+        : source.name === 'AnimeLib' || source.name.includes('(AnimeLib)') ? 'AnimeLib'
+        : 'AniType';
       counts[label] = (counts[label] ?? 0) + 1;
     }
     return counts;

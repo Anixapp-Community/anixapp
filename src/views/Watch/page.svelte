@@ -6,7 +6,7 @@
   import { logLobbyAction, snapshotPlayback } from '../../services/lobby-action-log';
   import { getFluoPlayer, installWindowFluo, sendFluoPreviewFrame } from '../../fluo';
   import type { WatchState, EpisodeItem, DubberItem, LobbyActivityEntry, LobbyChatMessage, PopoverType, NextEpAltDub, DownloadedEpisodeItem, PlaybackAlt, SourceItem } from './_types';
-  import { isHlsUrl, isDubberBlacklisted, lobbyActionText, allowsIframeFallback, userPlaybackError } from './_utils';
+  import { isHlsUrl, isDubberBlacklisted, lobbyActionText, allowsIframeFallback, userPlaybackError, toCorsSafePlayUrl } from './_utils';
   import { createClickOrDblclick } from './_clickGate';
   import { setEmbedMediaContext } from './core/hls-media-context';
   import { normalizeSkipMarks, mergeSkipMarks, clampSkipMarksToDuration, skipMarkActive, endingIsAtEpisodeEnd, buildTimelineSausages, type SkipMarkKind, type SkipMarks } from './_skipMarks';
@@ -2044,8 +2044,13 @@
     const explicitWebPlayer = new URLSearchParams(location.search).get('webplayer') === '1';
     const url = episode.url;
     const resolved = await core.resolve(url, !!episode.iframe);
-    const media = episode.qualityMap && resolved.useVideo
-      ? { ...resolved, qualityMap: episode.qualityMap, currentQuality: episode.currentQuality ?? '' }
+    const corsSafeQualityMap = episode.qualityMap
+      ? Object.fromEntries(
+          Object.entries(episode.qualityMap).map(([q, qUrl]) => [q, toCorsSafePlayUrl(qUrl)]),
+        )
+      : undefined;
+    const media = corsSafeQualityMap && resolved.useVideo
+      ? { ...resolved, qualityMap: corsSafeQualityMap, currentQuality: episode.currentQuality ?? '' }
       : resolved;
     const api = window.anixApi?.release;
     const dubber = positiveId(dubId);

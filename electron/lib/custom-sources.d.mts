@@ -10,6 +10,9 @@ export function createCustomSources(options?: {
   fetcher?: typeof fetch;
   fetchMedia?: typeof fetch;
   aniTypeToken?: string;
+  aniLibToken?: string;
+  animeLibVideoBaseUrl?: string;
+  animeLibVideoPathPrefix?: string;
   resolveAlloha?: (url: string) => Promise<string | null>;
   prepareStream?: (url: string) => string | null;
 }): {

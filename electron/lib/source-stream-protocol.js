@@ -4,10 +4,19 @@ const { protocol } = require('electron');
 
 const SCHEME = 'anix-stream';
 
+const ANIME_LIB_UA = 'LibAppC/2.0.2 (Android 13; 2201116PG; POCO veux; ru) Complete/3066669';
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+
+function isAnimeLibMediaHost(host) {
+  return host === 'cdnlibs.org' || host.endsWith('.cdnlibs.org') || host === 'imglib.info' || host.endsWith('.imglib.info');
+}
+
 function getSourceOrigin(host) {
   if (host === 'tut-video.net' || host.endsWith('.tut-video.net')) return 'https://player.aksor.tv';
   if (host.endsWith('.userplay.live')) return 'https://alloha.yani.tv';
   if (host.endsWith('.okcdn.ru')) return 'https://player.cdnvideohub.com';
+  if (isAnimeLibMediaHost(host)) return 'https://animelib.org';
   return null;
 }
 
@@ -27,10 +36,24 @@ function fetchSourceStream(raw, options = {}) {
   const url = new URL(raw);
   if (!sourceStreamUrl(url.href)) throw new Error('Unsupported source stream host');
   const origin = getSourceOrigin(url.hostname);
+  const extraHeaders = isAnimeLibMediaHost(url.hostname)
+    ? {
+        Origin: 'animelib.org',
+        Referer: 'animelib.org',
+        'Site-Id': '5',
+        'User-Agent': ANIME_LIB_UA,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept-Encoding': 'identity',
+      }
+    : {
+        Origin: origin,
+        Referer: origin + '/',
+        ...(url.hostname.endsWith('.okcdn.ru') ? { 'User-Agent': BROWSER_UA } : {}),
+      };
   return fetch(url, {
     ...options,
-    headers: { Origin: origin, Referer: origin + '/', ...options.headers },
-    redirect: 'error',
+    headers: { ...extraHeaders, ...options.headers },
+    redirect: isAnimeLibMediaHost(url.hostname) ? 'follow' : 'error',
   });
 }
 

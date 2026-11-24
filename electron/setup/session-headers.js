@@ -122,6 +122,13 @@ function setupSessionRequestHeaders() {
       upsertHeader(requestHeaders, 'Referer', preservedReferer || 'https://sovetromantica.com/');
     } else if (host.includes('libria') || host.includes('anilib')) {
       upsertHeader(requestHeaders, 'Referer', preservedReferer || details.referrer || 'https://anilibria.top/');
+    } else if (host === 'cdnlibs.org' || host.endsWith('.cdnlibs.org') || host === 'imglib.info' || host.endsWith('.imglib.info')) {
+      upsertHeader(requestHeaders, 'Site-Id', '5');
+      upsertHeader(requestHeaders, 'Origin', 'animelib.org');
+      upsertHeader(requestHeaders, 'Referer', 'animelib.org');
+      upsertHeader(requestHeaders, 'X-Requested-With', 'XMLHttpRequest');
+      upsertHeader(requestHeaders, 'Accept-Encoding', 'identity');
+      upsertHeader(requestHeaders, 'User-Agent', 'LibAppC/2.0.2 (Android 13; 2201116PG; POCO veux; ru) Complete/3066669');
     } else if (preservedReferer) {
       upsertHeader(requestHeaders, 'Referer', preservedReferer);
     }
@@ -146,6 +153,8 @@ function setupSessionRequestHeaders() {
       || host.includes('sovetromantica');
     if (useBrowserUa) {
       upsertHeader(requestHeaders, 'User-Agent', BROWSER_UA);
+    } else if (host === 'cdnlibs.org' || host.endsWith('.cdnlibs.org') || host === 'imglib.info' || host.endsWith('.imglib.info')) {
+      upsertHeader(requestHeaders, 'User-Agent', 'LibAppC/2.0.2 (Android 13; 2201116PG; POCO veux; ru) Complete/3066669');
     } else {
       upsertHeader(requestHeaders, 'User-Agent', ANIXART_UA);
       upsertHeader(requestHeaders, 'sec-ch-ua', '"AnixartApp"');

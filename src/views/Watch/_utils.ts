@@ -90,7 +90,7 @@ function canUseViteMediaProxy(): boolean {
 
 function hostNeedsMediaProxy(host: string): boolean {
   const h = host.replace(/^www\./, '').toLowerCase();
-  return /okcdn|vkvd|vkuservideo|mycdn|userapi|sibnet|solodcdn|kodik|rutube|libria|anilib|collaps|studiomir|animedia|zerocdn|imgsmail|mail\.ru|myvi|secvideo1|csst\.online|sstrge|sovetromantica/i.test(h);
+  return /okcdn|vkvd|vkuservideo|mycdn|userapi|sibnet|solodcdn|kodik|rutube|libria|anilib|collaps|studiomir|animedia|zerocdn|imgsmail|mail\.ru|myvi|secvideo1|csst\.online|sstrge|sovetromantica|cdnlibs|imglib|tut-video/i.test(h);
 }
 
 function shouldUseTvMediaProxy(): boolean {
@@ -146,7 +146,13 @@ export function isHlsUrl(url: string): boolean {
 }
 
 export function isDashUrl(url: string): boolean {
-  return /\.mpd(?:[?#]|$)/i.test(url);
+  if (/\.mpd(?:[?#]|$)/i.test(url)) return true;
+  try {
+    const target = new URL(url, 'http://local.invalid').searchParams.get('u');
+    return !!target && /\.mpd(?:[?#]|$)/i.test(target);
+  } catch {
+    return false;
+  }
 }
 
 export function fmtTime(t: number): string {

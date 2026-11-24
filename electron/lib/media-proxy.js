@@ -88,6 +88,7 @@ function refererFor(url, overrideRef) {
   if (host.includes('myvi')) return 'https://www.myvi.top/';
   if (/secvideo1|csst\.online|sstrge/.test(host)) return 'https://secvideo1.online/';
   if (host.includes('sovetromantica')) return 'https://sovetromantica.com/';
+  if (host.includes('tut-video')) return 'https://player.aksor.tv/';
   return 'https://anixart.tv/';
 }
 
@@ -229,6 +230,27 @@ function isPlaylistUrl(url, contentType) {
   return false;
 }
 
+function isDashManifestUrl(url, contentType) {
+  const ct = String(contentType || '').toLowerCase();
+  if (ct.includes('dash+xml')) return true;
+  return /\.mpd(?:[?#]|$)/i.test(url);
+}
+
+function rewriteMpd(text, baseUrl, ref, cookie) {
+  const toProxy = (raw) => {
+    try {
+      const abs = new URL(raw, baseUrl).href;
+      if (!isAllowedMediaUrl(abs)) return raw;
+      return proxyPath(abs, ref, cookie).replace(/%24([A-Za-z0-9_%-]+)%24/g, '$$$1$$');
+    } catch {
+      return raw;
+    }
+  };
+  return String(text)
+    .replace(/(initialization|media)="([^"]+)"/gi, (_, attr, val) => `${attr}="${toProxy(val)}"`)
+    .replace(/<BaseURL>([^<]+)<\/BaseURL>/gi, (_, val) => `<BaseURL>${toProxy(val.trim())}</BaseURL>`);
+}
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -319,7 +341,28 @@ async function fetchMediaResilient(url, method, headers) {
   throw new Error('Upstream fetch failed');
 }
 
+const ANIME_LIB_UA =
+  'LibAppC/2.0.2 (Android 13; 2201116PG; POCO veux; ru) Complete/3066669';
+
+function isAnimeLibMediaHost(host) {
+  const h = String(host || '').replace(/^www\./, '').toLowerCase();
+  return h === 'cdnlibs.org' || h.endsWith('.cdnlibs.org') || h === 'imglib.info' || h.endsWith('.imglib.info');
+}
+
 function mediaRequestHeaders(url, refOverride) {
+  let host = '';
+  try { host = new URL(url).host; } catch { /* ignore */ }
+  if (isAnimeLibMediaHost(host)) {
+    return {
+      Accept: '*/*;q=0.8',
+      'Site-Id': '5',
+      Origin: 'animelib.org',
+      Referer: 'animelib.org',
+      'User-Agent': ANIME_LIB_UA,
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept-Encoding': 'identity',
+    };
+  }
   return {
     'User-Agent': BROWSER_UA,
     Referer: refererFor(url, refOverride),
@@ -377,6 +420,18 @@ async function proxyMediaRequest(req, res, targetUrl, refOverride, cookieOverrid
     res.writeHead(200, {
       ...corsHeaders(),
       'Content-Type': 'application/vnd.apple.mpegurl',
+      'Cache-Control': 'no-store',
+    });
+    res.end(rewritten);
+    return;
+  }
+
+  if (upstream.ok && isDashManifestUrl(finalUrl, ct) && req.method !== 'HEAD') {
+    const text = await upstream.text();
+    const rewritten = rewriteMpd(text, finalUrl, refOverride, cookie);
+    res.writeHead(200, {
+      ...corsHeaders(),
+      'Content-Type': 'application/dash+xml',
       'Cache-Control': 'no-store',
     });
     res.end(rewritten);
