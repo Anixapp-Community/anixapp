@@ -1,4 +1,4 @@
-import { resolveEpisodeUrlWithRetry, stripKodikQueryParams } from '../_utils';
+import { resolveEpisodeUrlWithRetry } from '../_utils';
 
 export type ResolvedEpisodeMedia = Awaited<ReturnType<typeof resolveEpisodeUrlWithRetry>>;
 
@@ -9,7 +9,7 @@ const inflight = new Map<string, Promise<ResolvedEpisodeMedia>>();
 
 function cacheKey(embedUrl: string, iframe: boolean, sourceWebPlayer: boolean): string {
   const raw = embedUrl.startsWith('http') ? embedUrl : `https:${embedUrl}`;
-  return `${stripKodikQueryParams(raw)}|iframe:${iframe ? 1 : 0}|sourceWeb:${sourceWebPlayer ? 1 : 0}`;
+  return `${raw}|iframe:${iframe ? 1 : 0}|sourceWeb:${sourceWebPlayer ? 1 : 0}`;
 }
 
 function isSourceWebPlayer(): boolean {

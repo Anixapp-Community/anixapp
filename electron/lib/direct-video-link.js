@@ -132,13 +132,14 @@ function resultFromMap(qualityMap, headers, extra = {}) {
   };
 }
 
-async function followSibnetLocation(videoUrl, embedUrl, hops = 0) {
+async function followSibnetLocation(videoUrl, embedUrl, signal, hops = 0) {
   if (!videoUrl || hops > 5) return null;
   let res;
   try {
     res = await fetch(videoUrl, {
       method: 'GET',
       redirect: 'manual',
+      signal,
       headers: {
         Referer: embedUrl,
         'User-Agent': BROWSER_UA,
@@ -149,21 +150,17 @@ async function followSibnetLocation(videoUrl, embedUrl, hops = 0) {
   } catch {
     return null;
   }
-  try { await res.arrayBuffer(); } catch { /* drain */ }
+  try { await res.body?.cancel(); } catch { /* ignore */ }
 
   const loc = res.headers.get('location');
-  if (loc) {
-    let next = loc.replace(/:443/g, '');
-    if (next.startsWith('//')) next = `https:${next}`;
-    else if (next.startsWith('/')) next = `https://video.sibnet.ru${next}`;
-    else if (!/^https?:/i.test(next)) next = `https:${next}`;
-    if (next === videoUrl) return isHtmlPlayerPage(next) ? null : next;
-    const deeper = await followSibnetLocation(next, embedUrl, hops + 1);
-    return deeper || (isHtmlPlayerPage(next) ? null : next);
+  if (loc && [301, 302, 303, 307, 308].includes(res.status)) {
+    const next = new URL(loc, videoUrl);
+    if (!/^https?:$/.test(next.protocol) || next.href === videoUrl || isHtmlPlayerPage(next.href)) return null;
+    return followSibnetLocation(next.href, embedUrl, signal, hops + 1);
   }
 
   const ct = (res.headers.get('content-type') || '').toLowerCase();
-  if (/video\/|octet-stream|mp4|mpegurl/i.test(ct)) return videoUrl;
+  if (res.ok && /video\/|octet-stream|mp4|mpegurl/i.test(ct)) return videoUrl;
   return null;
 }
 
@@ -191,14 +188,14 @@ function extractSibnetSrcPath(html) {
 
 async function getSibnetDirectLink(embedUrl) {
   try {
-    const pageRes = await fetch(embedUrl, { headers: SIBNET_PAGE_HEADERS, redirect: 'follow' });
+    const signal = AbortSignal.timeout(12_000);
+    const pageRes = await fetch(embedUrl, { headers: SIBNET_PAGE_HEADERS, redirect: 'follow', signal });
+    if (!pageRes.ok) return null;
     const html = await pageRes.text();
     const srcPath = extractSibnetSrcPath(html);
     if (!srcPath) return null;
     const videoUrl = srcPath.startsWith('http') ? srcPath : `https://video.sibnet.ru${srcPath}`;
-    const followed = await followSibnetLocation(videoUrl, embedUrl);
-    if (followed) return followed;
-    if (!isSibnetHtmlEmbed(videoUrl) && /\.mp4(\?|$)/i.test(videoUrl)) return videoUrl;
+    return await followSibnetLocation(videoUrl, embedUrl, signal);
   } catch { /* ignore */ }
 
   return null;
@@ -310,23 +307,21 @@ async function getLibriaDirectLink(url, host) {
   })();
 
   const apiPromise = (async () => {
+    let missing = 0;
     for (const base of apiBases) {
       try {
         const r = await fetch(`${base}/${releaseId}`, {
           headers: { Accept: 'application/json', 'User-Agent': BROWSER_UA },
           signal: AbortSignal.timeout(15_000),
         });
-        if (r.status === 404) return { __missing: true };
+        if (r.status === 404) missing += 1;
         if (r.ok) return await r.json();
       } catch { /* next host */ }
     }
-    return null;
+    return missing === apiBases.length ? { __missing: true } : null;
   })();
 
   const [scraped, apiBody] = await Promise.all([scrapePromise, apiPromise]);
-  if (apiBody?.__missing) {
-    return empty({ error: 'libria-release-missing', skip: null });
-  }
   const directMap = scraped?.map || null;
   const ep = (apiBody?.episodes || []).find((e) => String(e.ordinal) === String(epNum));
   const skip = skipFromLibriaEpisode(ep);
@@ -343,7 +338,7 @@ async function getLibriaDirectLink(url, host) {
     return resultFromMap(qualityMap, headers, { skip });
   }
 
-  if (scraped?.unavailable || !ep) {
+  if (apiBody?.__missing || scraped?.unavailable || (Array.isArray(apiBody?.episodes) && !ep)) {
     return empty({ error: 'libria-release-missing', skip });
   }
   return empty({ skip });
@@ -453,6 +448,7 @@ async function getStudioMirDirectLink(url) {
   const apiUrl = `${STUDIOMIR_API}?ani=${encodeURIComponent(ani)}&apikey=${STUDIOMIR_API_KEY}`;
   const res = await fetch(apiUrl, {
     headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json', Referer: 'https://api.studiomir.club/' },
+    signal: AbortSignal.timeout(12_000),
   });
   if (!res.ok) return empty();
   const body = await res.json();
@@ -621,7 +617,10 @@ async function getSovetRomanticaDirectLink(url) {
 async function getOkDirectLink(url) {
   const headers = { Referer: url, 'User-Agent': OK_UA };
   try {
-    const page = await fetch(url, { headers: { 'User-Agent': OK_UA, Referer: 'https://ok.ru/' } });
+    const page = await fetch(url, {
+      headers: { 'User-Agent': OK_UA, Referer: 'https://ok.ru/' },
+      signal: AbortSignal.timeout(12_000),
+    });
     const html = await page.text();
     const named = extractOkNamedQualities(html);
     if (Object.keys(named).length) return resultFromMap(named, headers);

@@ -1,6 +1,6 @@
 import { notifyHistoryChanged } from '../../../utils/favorites-events';
 import { isLocalMediaUrl } from '../../../utils/local-media-url';
-import { isHlsUrl, stripKodikQueryParams } from '../_utils';
+import { isHlsUrl } from '../_utils';
 import { bufferAheadAtPlayhead, detachHls, startHlsFromTime, swapMediaSource } from './hls-engine';
 import { prefetchEpisodeUrl, resolveEpisodeUrlCached, invalidateEpisodeUrlCache, type ResolvedEpisodeMedia } from './url-cache';
 import { UpscaleController, isGpuAvailable } from './upscale';
@@ -52,7 +52,7 @@ export class PlayerCore {
 
   setOrigEpisodeUrl(rawUrl: string): void {
     const abs = rawUrl.startsWith('http') ? rawUrl : `https:${rawUrl}`;
-    this.origEpUrl = stripKodikQueryParams(abs);
+    this.origEpUrl = abs;
   }
 
   invalidateCache(embedUrl?: string): void {

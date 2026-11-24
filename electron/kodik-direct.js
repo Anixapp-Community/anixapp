@@ -6,18 +6,14 @@ const { parseKodikSkipButton } = require('./lib/skip-marks');
 const KODIK_PLAYER_ORIGIN = 'https://kodikplayer.com/';
 /** Уже расшифрованный URL — не трогаем (solodcdn /s/m/, useruploads, cloud и т.п.). */
 const KODIK_PLAIN_SRC = /(?:kodik-storage|solodcdn)\.com\//i;
+const { BACKUP_API_PROXY, getBackupProxyEnabled } = require('./lib/backup-proxy');
+const { isAllowedMediaUrl } = require('./lib/media-proxy');
+
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 function normalizeKodikEmbedUrl(embedUrl) {
-  let url = embedUrl.startsWith('http') ? embedUrl : `https:${embedUrl}`;
-  try {
-    const u = new URL(url);
-    url = u.origin + u.pathname;
-  } catch {
-    /* keep */
-  }
-  return url;
+  return embedUrl.startsWith('http') ? embedUrl : `https:${embedUrl}`;
 }
 
 function decryptKodikSrc(src) {
@@ -89,13 +85,14 @@ function isKodikManifest(url) {
 }
 
 /** CDN Kodik часто 302 на bingo/shadow.* — с части сетей edge недоступен. */
-async function probeKodikManifest(manifestUrl, headers = {}) {
+async function probeKodikMedia(manifestUrl, headers = {}, cancellation) {
   const baseHeaders = {
     Referer: 'https://kodikplayer.com/',
     'User-Agent': BROWSER_UA,
     Accept: '*/*',
     ...headers,
   };
+  const deadline = AbortSignal.timeout(8_000);
   let current = manifestUrl;
   for (let hop = 0; hop < 4; hop++) {
     const timeoutMs = isKodikEdgeHost((() => {
@@ -107,17 +104,18 @@ async function probeKodikManifest(manifestUrl, headers = {}) {
         method: 'GET',
         redirect: 'manual',
         headers: baseHeaders,
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.any([deadline, AbortSignal.timeout(timeoutMs), ...(cancellation ? [cancellation] : [])]),
       });
     } catch {
       return false;
     }
     if (res.status >= 200 && res.status < 300) {
-      try { await res.arrayBuffer(); } catch { /* ignore */ }
-      return isKodikManifest(current) || /mpegurl/i.test(res.headers.get('content-type') || '');
+      const mime = res.headers.get('content-type') || '';
+      try { await res.body?.cancel(); } catch { /* ignore */ }
+      return /mpegurl|^video\//i.test(mime) || (isKodikManifest(current) && !/text\/html|application\/json/i.test(mime));
     }
     const loc = res.headers.get('location');
-    try { await res.arrayBuffer(); } catch { /* ignore */ }
+    try { await res.body?.cancel(); } catch { /* ignore */ }
     if (!loc || ![301, 302, 303, 307, 308].includes(res.status)) return false;
     try { current = new URL(loc, current).href; } catch { return false; }
   }
@@ -128,6 +126,7 @@ async function fetchText(url, headers = {}) {
   const res = await fetch(url, {
     headers: { 'User-Agent': BROWSER_UA, ...headers },
     redirect: 'follow',
+    signal: AbortSignal.timeout(8_000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.text();
@@ -140,6 +139,7 @@ async function fetchKodikFtorLinks(pageUrl, videoInfo) {
   const ftorUrl = `https://kodikplayer.com/ftor?${new URLSearchParams({ type, hash, id }).toString()}`;
   const res = await fetch(ftorUrl, {
     headers: { Referer: pageUrl, Accept: 'application/json', 'User-Agent': BROWSER_UA },
+    signal: AbortSignal.timeout(8_000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const payload = await res.json();
@@ -213,24 +213,49 @@ async function getDirectVideoLink(embedUrl) {
     if (host.includes('kodik') || host.includes('aniqit') || host.includes('anixis') || host.includes('aniqart')) {
       const { links, skip } = await loadKodikPlayer(url);
       if (!links || typeof links !== 'object') return { ...EMPTY, skip: skip || null };
+      const candidates = new Map();
       const qualityMap = {};
-      for (const [key, arr] of Object.entries(links)) {
-        const src = toAbs(arr?.[0]?.src);
-        if (src) qualityMap[key.replace('p', '')] = preferPlayableKodikUrl(src);
-      }
-      const best = PRIO.find((k) => qualityMap[k]) || Object.keys(qualityMap)[0];
-      let directUrl = best ? qualityMap[best] : null;
-      const dlHeaders = directUrl
-        ? { Referer: 'https://kodikplayer.com/', 'User-Agent': BROWSER_UA }
-        : {};
-
-      if (directUrl) {
-        const playable = await probeKodikManifest(directUrl, dlHeaders);
-        if (!playable) {
-          console.warn('[kodik-direct] CDN unreachable, fallback to embed iframe');
-          directUrl = null;
-          for (const k of Object.keys(qualityMap)) delete qualityMap[k];
+      for (const [key, variants] of Object.entries(links)) {
+        const quality = key.replace(/p$/i, '');
+        if (!Array.isArray(variants)) continue;
+        for (const variant of variants) {
+          const src = toAbs(variant?.src);
+          if (!src) continue;
+          const mediaUrl = preferPlayableKodikUrl(src);
+          if (!candidates.has(mediaUrl)) candidates.set(mediaUrl, quality);
+          qualityMap[quality] ??= mediaUrl;
         }
+      }
+      let best = PRIO.find((key) => qualityMap[key]) || Object.keys(qualityMap)[0];
+      let directUrl = best ? qualityMap[best] : null;
+      const dlHeaders = { Referer: 'https://kodikplayer.com/', 'User-Agent': BROWSER_UA };
+
+      if (directUrl && !await probeKodikMedia(directUrl, dlHeaders)) {
+        const unavailableUrl = directUrl;
+        const alternates = [...candidates].filter(([url]) => url !== unavailableUrl).slice(0, 8);
+        const cancelProbes = new AbortController();
+        directUrl = await Promise.any(alternates.map(async ([url, quality]) => {
+          if (!await probeKodikMedia(url, dlHeaders, cancelProbes.signal)) throw new Error('CDN candidate unavailable');
+          return { url, quality };
+        })).then((candidate) => {
+          best = candidate.quality;
+          // Other candidates are unverified on this network after the preferred CDN failed.
+          for (const quality of Object.keys(qualityMap)) delete qualityMap[quality];
+          qualityMap[best] = candidate.url;
+          return candidate.url;
+        }, () => null).finally(() => cancelProbes.abort());
+
+        if (!directUrl && getBackupProxyEnabled() && isAllowedMediaUrl(unavailableUrl)) {
+          const proxy = new URL('/tv/media', BACKUP_API_PROXY);
+          proxy.searchParams.set('u', unavailableUrl);
+          proxy.searchParams.set('ref', dlHeaders.Referer);
+          if (await probeKodikMedia(proxy.href, dlHeaders)) {
+            for (const quality of Object.keys(qualityMap)) delete qualityMap[quality];
+            qualityMap[best] = proxy.href;
+            directUrl = proxy.href;
+          }
+        }
+        if (!directUrl) console.warn('[kodik-direct] CDN candidates unreachable, fallback to embed iframe');
       }
 
       return {

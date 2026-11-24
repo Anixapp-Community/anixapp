@@ -1962,6 +1962,19 @@
           });
           return;
         }
+        const failedQuality = player.currentQuality;
+        const failedUrl = player.availableQualities[failedQuality];
+        if (failedUrl && failedUrl === pUrl) {
+          const remaining = Object.fromEntries(Object.entries(player.availableQualities)
+            .filter(([, url]) => url !== failedUrl));
+          const next = Object.keys(remaining).sort((a, b) => Number.parseInt(b, 10) - Number.parseInt(a, 10))[0];
+          player.availableQualities = remaining;
+          if (next) {
+            player.currentQuality = next;
+            applyVideoAndUI(remaining[next], true, ep, titleStr, srcName, dubId, videoEl?.currentTime, videoEl?.paused ?? initialPaused);
+            return;
+          }
+        }
         if (core.origEpUrl && allowsIframeFallback(core.origEpUrl)) {
           applyVideoAndUI(core.origEpUrl, false, ep, titleStr, srcName, dubId);
           return;
@@ -2015,6 +2028,36 @@
     }
   }
 
+  async function resolvePlaybackSource(
+    rId: number, sId: number, ep: number, dubId: string | number | null,
+    episode: { url: string; iframe?: boolean }, isCurrent: () => boolean,
+  ) {
+    const media = await core.resolve(episode.url, !!episode.iframe);
+    const api = window.anixApi?.release;
+    const dubber = positiveId(dubId);
+    const explicitWebPlayer = new URLSearchParams(location.search).get('webplayer') === '1';
+    const original = { media, url: episode.url, source: null };
+    if (media.useVideo || !isCurrent() || explicitWebPlayer || inLobbyRoom() || dubber == null
+      || !api?.getDubberSources || !api.getEpisode) return original;
+
+    try {
+      const response = await api.getDubberSources(rId, dubber);
+      if (!isCurrent()) return original;
+      const candidates = ((response?.sources ?? []) as SourceItem[])
+        .filter((source) => Number(source.id) !== sId)
+        .slice(0, 3);
+      return await Promise.any(candidates.map(async (source) => {
+        const other = (await api.getEpisode(rId, source.id, ep))?.episode;
+        if (!other?.url || other.url === episode.url || !isCurrent()) throw new Error('No alternate episode URL');
+        const resolved = await core.resolve(other.url, !!other.iframe, 1);
+        if (!resolved.useVideo || !resolved.playUrl) throw new Error('No alternate direct stream');
+        return { source, url: other.url, media: resolved };
+      }));
+    } catch {
+      return original;
+    }
+  }
+
   function loadEpisode(rId: number, sId: number, ep: number, titleStr: string, srcName: string, dubId: string, seekTime?: number, initialPaused?: boolean): Promise<void> {
     localPlaybackPath = '';
     const api = (window as any).anixApi?.release;
@@ -2057,7 +2100,15 @@
         return;
       }
       setOrigEpisodeUrl(episode.url);
-      const { playUrl: pUrl, useVideo: uv, qualityMap, currentQuality: cq, skip, error: resolveError } = await core.resolve(episode.url, episode.iframe);
+      const selection = await resolvePlaybackSource(rId, sId, ep, dubId, episode, () => myGen === episodeLoadGen);
+      if (myGen !== episodeLoadGen) return;
+      if (selection.source) {
+        watchState.sourceId = String(selection.source.id);
+        srcName = selection.source.name;
+        setOrigEpisodeUrl(selection.url);
+        void fetchEpisodesSilently();
+      }
+      const { playUrl: pUrl, useVideo: uv, qualityMap, currentQuality: cq, skip, error: resolveError } = selection.media;
       if (myGen !== episodeLoadGen) return;
       setSkipMarks(skip, { carry: true });
       const resolved = applyQualityMap(qualityMap, cq, pUrl, { resetManualLock: true });
@@ -4006,6 +4057,8 @@
       player.errorText = 'Неверные параметры просмотра.';
     } else {
     void (async () => {
+      const initialLoadGen = ++episodeLoadGen;
+      const isCurrent = () => initialLoadGen === episodeLoadGen;
       try {
         let ep = episodeIndex(watchState.ep) ?? 1;
         let episode: { url: string; iframe?: boolean } | null = null;
@@ -4018,29 +4071,35 @@
           if (resolved) {
             ep = resolved.position;
             episode = resolved.episode;
-            watchState.ep = ep;
           }
         } else if (ep !== 0) {
           const zero = await (window as any).anixApi.release.getEpisode(rId, sId, 0);
           if (zero?.episode?.url) {
             ep = 0;
             episode = zero.episode;
-            watchState.ep = 0;
           }
         }
 
+        if (!isCurrent()) return;
         if (!episode?.url) {
           player.loadState = 'error';
           player.errorText = 'Серия недоступна.';
           return;
         }
 
-        setOrigEpisodeUrl(episode.url);
-        const { playUrl: pUrl, useVideo: uv, qualityMap, currentQuality: cq, skip, error: resolveError } = await core.resolve(episode.url, episode.iframe);
+        const selection = await resolvePlaybackSource(rId, sId, ep, dubId, episode, isCurrent);
+        if (!isCurrent()) return;
+        if (selection.source) {
+          watchState.sourceId = String(selection.source.id);
+          watchState.sourceName = selection.source.name;
+        }
+        setOrigEpisodeUrl(selection.url);
+        const { playUrl: pUrl, useVideo: uv, qualityMap, currentQuality: cq, skip, error: resolveError } = selection.media;
         const resolved = applyQualityMap(qualityMap, cq, pUrl, { resetManualLock: true });
         setSkipMarks(skip, { carry: true });
         player.loadState = 'ready';
         await tick();
+        if (!isCurrent()) return;
         applyVideoAndUI(resolved.url, uv, ep, watchState.title, watchState.sourceName, watchState.dubberId, initialSeek, initialJoinPaused, resolveError);
         if (initialSeek != null) rememberLobbyJoinSeek(initialSeek);
         refreshDubberNameFromApi();
@@ -4052,6 +4111,7 @@
         }
         showAndSchedule();
       } catch {
+        if (!isCurrent()) return;
         if (mediaHasRenderableFrame(videoEl) || player.currentTime > 0.15 || (player.useVideo && !!player.playUrl)) {
           revealPlayerMedia();
           return;
@@ -4574,6 +4634,7 @@
     window.addEventListener('blur', onPointerLeaveWindow);
 
     return () => {
+      episodeLoadGen += 1;
       videoListenersAbort?.abort();
       videoListenersAbort = null;
       persistEqSettings({ immediate: true });

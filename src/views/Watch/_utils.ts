@@ -129,18 +129,6 @@ export function isHlsUrl(url: string): boolean {
   return false;
 }
 
-export function stripKodikQueryParams(url: string): string {
-  try {
-    const u = new URL(url);
-    if (/kodikplayer\.com|kodik\.info|aniqit\.com|anixis\.com|aniqart\.com/i.test(u.hostname)) {
-      return u.origin + u.pathname;
-    }
-    return url;
-  } catch {
-    return url;
-  }
-}
-
 export function fmtTime(t: number): string {
   if (!isFinite(t) || isNaN(t) || t < 0) return '0:00';
   const totalSec = Math.floor(t);
@@ -198,7 +186,7 @@ export async function resolveEpisodeUrl(
       skip: null,
     };
   }
-  let url = stripKodikQueryParams(sourceUrl);
+  const url = sourceUrl;
   const host = (url.match(/https?:\/\/([^/]+)/) || [])[1] || '';
   const isAniqit   = /aniqit\.com|anixis\.com|aniqart\.com/i.test(host);
   const isKodik    = /kodikplayer\.com|kodik\.info/i.test(host);
@@ -216,10 +204,6 @@ export async function resolveEpisodeUrl(
   const isEmbedPage = isAniqit || isKodik;
   const needsDirectFetch = isSibnet || isLibria || isKodik || isAniqit || isVk || isRutube || isOk || isStudioMir
     || isMailRu || isMyvi || isAllvideo || isSovetRomantica;
-
-  if (isAniqit) {
-    try { const u = new URL(url); url = u.origin + u.pathname; } catch {}
-  }
 
   let playUrl       = url;
   let useVideo      = !iframe && !isYoutube && !isSocialEmbedUrl(url) && !isSibnetHtmlEmbed(url);
@@ -263,13 +247,14 @@ export async function resolveEpisodeUrl(
             const rawEntry = typeof v === 'string' ? v : String(v ?? '');
             if (!rawEntry || isUnplayableVideoSrc(rawEntry)) continue;
             const abs = rawEntry.startsWith('http') ? rawEntry : `https:${rawEntry}`;
-            qualityMap[k.replace(/p$/, '')] = stripKodikQueryParams(toPlayable(abs));
+            qualityMap[k.replace(/p$/, '')] = toPlayable(abs);
           }
-          const best = QUALITY_PRIORITY.find(k => qualityMap[k] || qualityMap[k + 'p']) || Object.keys(qualityMap)[0];
+          const preferred = String(res?.quality ?? '').replace(/p$/i, '');
+          const best = qualityMap[preferred] ? preferred : QUALITY_PRIORITY.find((k) => qualityMap[k]) || Object.keys(qualityMap)[0];
           currentQuality = best || '';
-          playUrl = currentQuality ? qualityMap[currentQuality] : stripKodikQueryParams(toPlayable(raw));
+          playUrl = currentQuality ? qualityMap[currentQuality] : toPlayable(raw);
         } else {
-          playUrl = stripKodikQueryParams(toPlayable(raw));
+          playUrl = toPlayable(raw);
           if (isSibnet) {
             qualityMap = { '720': playUrl };
             currentQuality = '720';

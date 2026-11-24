@@ -459,6 +459,12 @@ ipcMain.handle('anix:getDirectVideoLink', async (_, embedUrl) => {
   if (!url) {
     return { directUrl: null, quality: null, qualityMap: {}, downloadHeaders: {}, skip: null, error: null };
   }
+  let host = '';
+  try { host = new URL(url.startsWith('//') ? `https:${url}` : url).hostname; } catch { /* invalid URL */ }
+  const isKodik = /kodik|aniqit|anixis|aniqart/i.test(host);
+  // Kodik CDN reachability depends on the client's network.
+  const local = isKodik ? await getDirectVideoLink(url) : null;
+  if (local?.directUrl) return local;
   try {
     const remote = await resolveViaAnixback(url);
     if (remote?.directUrl) return remote;
@@ -466,7 +472,7 @@ ipcMain.handle('anix:getDirectVideoLink', async (_, embedUrl) => {
   } catch (e) {
     console.warn('[stream] anixback resolve failed, local fallback:', e?.message || e);
   }
-  return getDirectVideoLink(url);
+  return local ?? getDirectVideoLink(url);
 });
 
 function getDefaultDownloadDirectory() {
