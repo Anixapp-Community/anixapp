@@ -14,7 +14,7 @@
     <UiV2ReleaseCarousel measureKey={items.length}>
       {#each items as item (item.id)}
         <div class="overview-collections-week__item">
-          <CollectionCard data={item} variant="cover" />
+          <CollectionCard data={item} />
         </div>
       {/each}
     </UiV2ReleaseCarousel>

@@ -898,7 +898,6 @@
         id: 'c1',
         title: 'Лучшее за сезон',
         image: posters[0] ?? fallback,
-        description: 'Подборка тайтлов, которые стоит досмотреть до конца сезона.',
         releaseCount: 18,
         notesCount: 24,
         favoritesCount: 3120,
@@ -908,7 +907,6 @@
         id: 'c2',
         title: 'Для вечера',
         image: posters[1] ?? fallback,
-        description: 'Лёгкие и атмосферные релизы, когда не хочется напрягаться.',
         releaseCount: 12,
         notesCount: 6,
         favoritesCount: 980,
@@ -917,7 +915,6 @@
         id: 'c3',
         title: 'Скрытые жемчужины',
         image: posters[2] ?? fallback,
-        description: 'Малоизвестные, но сильные работы — для расширения кругозора.',
         releaseCount: 9,
         notesCount: 41,
         favoritesCount: 15400,
@@ -927,7 +924,6 @@
         id: 'c4',
         title: 'Классика сёнэна',
         image: posters[3] ?? fallback,
-        description: null,
         releaseCount: 27,
         favoritesCount: 8200,
         isFavorite: true,
@@ -2001,7 +1997,7 @@
           <div class="uikit-v2-demo-block">
             <UiV2SectionHeader
               title="Коллекции"
-              subtitle="Обложка с названием поверх — без блока описания"
+              subtitle="Обложка с названием и метаданными поверх"
               onShowAll={() => showToast('Показать всё: коллекции')}
             />
             {#if cardsPending}
@@ -2011,7 +2007,6 @@
               {#each collectionDemoItems as item (item.id)}
                 <UiV2CollectionCard
                   data={item}
-                  variant="cover"
                   onclick={(c) => showToast(`Коллекция: ${c.title}`)}
                   onMenuSelect={(id) => showToast(`Коллекция «${id}»: ${item.title}`)}
                 />

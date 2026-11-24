@@ -132,25 +132,25 @@
     </div>
   {/if}
 
-  <div class="uiv2-comment-composer__row">
-    <div class="uiv2-comment-composer__field">
-      <UiV2OutlinedField
-        id={fieldId}
-        class="uiv2-comment-composer__outlined"
-        label={fieldLabel}
-        bind:value={message}
-        multiline={true}
-        rows={3}
-        disabled={busy}
-        error={!!validationError}
-        hint={validationError}
-        hintTone="error"
-        oninput={onFieldInput}
-      />
+  <div class="uiv2-comment-composer__field">
+    <UiV2OutlinedField
+      id={fieldId}
+      class="uiv2-comment-composer__outlined"
+      label={fieldLabel}
+      bind:value={message}
+      multiline={true}
+      rows={2}
+      disabled={busy}
+      error={!!validationError}
+      hint={validationError}
+      hintTone="error"
+      oninput={onFieldInput}
+    />
 
+    <div class="uiv2-comment-composer__footer">
       <div class="uiv2-comment-composer__tools">
         <UiV2Button
-          size="sm"
+          size="md"
           variant={isSpoiler ? 'primary' : 'chrome'}
           label="Спойлер"
           disabled={busy}
@@ -160,13 +160,13 @@
           }}
         >
           {#snippet icon()}
-            {@html iconEye(14)}
+            {@html iconEye(16)}
           {/snippet}
         </UiV2Button>
 
         <div class="uiv2-comment-composer__rules">
           <UiV2Button
-            size="sm"
+            size="md"
             variant="chrome"
             label="Правила"
             disabled={busy}
@@ -176,7 +176,7 @@
             }}
           >
             {#snippet icon()}
-              {@html iconClipboardList(14)}
+              {@html iconClipboardList(16)}
             {/snippet}
           </UiV2Button>
 
@@ -214,17 +214,17 @@
           {/if}
         </div>
       </div>
-    </div>
 
-    <UiV2RoundButton
-      size="md"
-      label="Отправить"
-      disabled={busy || !message.trim()}
-      class="uiv2-comment-composer__submit"
-      onclick={() => void submit()}
-    >
-      {@html iconArrowUp(18)}
-    </UiV2RoundButton>
+      <UiV2RoundButton
+        size="md"
+        label="Отправить"
+        disabled={busy || !message.trim()}
+        class="uiv2-comment-composer__submit"
+        onclick={() => void submit()}
+      >
+        {@html iconArrowUp(18)}
+      </UiV2RoundButton>
+    </div>
   </div>
 </div>
 

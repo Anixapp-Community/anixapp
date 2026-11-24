@@ -541,7 +541,7 @@
       {:else}
         <div class="collections-feed">
           {#each visibleItems as item (item.id)}
-            <CollectionCard data={item} variant="grid" />
+            <CollectionCard data={item} />
           {/each}
         </div>
       {/if}
@@ -563,7 +563,7 @@
   <div class="collections-feed">
     {#if seed}
       {#each seed.items.slice(0, TAB_PEEK_ITEMS) as item (item.id)}
-        <CollectionCard data={item} variant="grid" />
+        <CollectionCard data={item} />
       {/each}
     {:else}
       <UiV2CollectionCardSkeleton count={6} />

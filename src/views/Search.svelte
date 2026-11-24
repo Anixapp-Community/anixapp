@@ -491,7 +491,7 @@
     {:else if activeTab === 'collections'}
       <div class="collections-feed">
         {#each collections as item (item.id)}
-          <CollectionCard data={item} variant="grid" />
+          <CollectionCard data={item} />
         {/each}
       </div>
     {:else}
@@ -539,7 +539,7 @@
   {:else if id === 'collections'}
     <div class="collections-feed">
       {#each seed.collections.slice(0, TAB_PEEK_ITEMS) as item (item.id)}
-        <CollectionCard data={item} variant="grid" />
+        <CollectionCard data={item} />
       {/each}
     </div>
   {:else}

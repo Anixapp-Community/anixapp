@@ -722,6 +722,13 @@ $anix-comment-thread-color: color-mix(in srgb, $color-border 85%, transparent);
   }
 }
 
+/** Скролл-обёртка с кастомным скроллбаром UI Kit V2 (правая панель комментариев). */
+.anix-comments__scroll-pane {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+}
+
 .anix-comments__dock {
   flex-shrink: 0;
   z-index: 20;

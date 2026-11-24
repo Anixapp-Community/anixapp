@@ -19,7 +19,6 @@
     id: number | string;
     title: string;
     image?: string | null;
-    description?: string | null;
     releaseCount?: number | null;
     notesCount?: number | null;
     favoritesCount?: number | null;
@@ -29,8 +28,6 @@
 
   type Props = {
     data: UiV2CollectionCardData;
-    /** grid — текст под обложкой; cover — заголовок на обложке */
-    variant?: 'grid' | 'cover';
     moreLabel?: string;
     /** Показывать ⋯ / ПКМ. По умолчанию да. */
     showMenu?: boolean;
@@ -45,7 +42,6 @@
 
   let {
     data,
-    variant = 'cover',
     moreLabel = 'Ещё',
     showMenu = true,
     menuItems,
@@ -109,6 +105,15 @@
   const displayImageUrl = $derived(
     data.image ? toPosterDisplayUrl(data.image, 'collectionCover') : '',
   );
+
+  /** Битая ссылка на обложку: вместо иконки «сломанной картинки» показываем заглушку. */
+  let imageFailed = $state(false);
+  $effect(() => {
+    // Сбрасываем ошибку при смене обложки
+    displayImageUrl;
+    imageFailed = false;
+  });
+  const showImage = $derived(!!displayImageUrl && !imageFailed);
 
   const showFavoritesMeta = $derived(
     typeof data.favoritesCount === 'number' || localFavorite || localFavoritesCount > 0,
@@ -191,12 +196,6 @@
     }, 1400);
   }
 
-  function onFavoriteChip(e: MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    void handleMenuSelect('favorite');
-  }
-
   async function handleMenuSelect(id: string) {
     if (id === 'favorite') {
       const next = !localFavorite;
@@ -236,7 +235,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <article
-  class="uiv2-collection uiv2-collection--{variant} {className}"
+  class="uiv2-collection {className}"
   class:uiv2-collection--menu-open={menuOpen}
   role={onclick ? 'button' : 'group'}
   tabindex={onclick ? 0 : undefined}
@@ -251,13 +250,16 @@
   </div>
 
   <div class="uiv2-collection__card">
-    {#if variant === 'grid' && displayImageUrl}
-      <img class="uiv2-collection__ambient" src={displayImageUrl} alt="" aria-hidden="true" loading="lazy" decoding="async" />
-    {/if}
-
     <div class="uiv2-collection__media">
-      {#if displayImageUrl}
-        <img class="uiv2-collection__img" src={displayImageUrl} alt="" loading="lazy" decoding="async" />
+      {#if showImage}
+        <img
+          class="uiv2-collection__img"
+          src={displayImageUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onerror={() => { imageFailed = true; }}
+        />
       {:else}
         <span class="uiv2-collection__media-fallback" aria-hidden="true">{@html iconLayoutGrid(28)}</span>
       {/if}
@@ -288,90 +290,41 @@
         {/if}
       </div>
 
-      {#if variant === 'grid' && typeof data.releaseCount === 'number'}
-        <span class="uiv2-collection__glass uiv2-collection__count">
-          {@html iconFilm(13)}
-          <span>{data.releaseCount} {releaseWord(data.releaseCount)}</span>
-        </span>
-      {/if}
-
-      {#if variant === 'cover'}
-        <div class="uiv2-collection__cover-text">
-          <h3 class="uiv2-collection__title uiv2-collection__title--cover">{data.title}</h3>
-          {#if hasCoverMeta}
-            <p class="uiv2-collection__cover-meta">
-              {#if typeof data.releaseCount === 'number'}
-                <span class="uiv2-collection__meta-item">
-                  <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconFilm(13)}</span>
-                  <span class="uiv2-collection__meta-text">{data.releaseCount} {releaseWord(data.releaseCount)}</span>
-                </span>
-              {/if}
-              {#if typeof data.notesCount === 'number'}
-                {#if typeof data.releaseCount === 'number'}
-                  <span class="uiv2-collection__meta-sep" aria-hidden="true">·</span>
-                {/if}
-                <span class="uiv2-collection__meta-item">
-                  <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconMessageCircle(13)}</span>
-                  <span class="uiv2-collection__meta-text">{formatCount(data.notesCount)}</span>
-                </span>
-              {/if}
-              {#if showFavoritesMeta}
-                {#if typeof data.releaseCount === 'number' || typeof data.notesCount === 'number'}
-                  <span class="uiv2-collection__meta-sep" aria-hidden="true">·</span>
-                {/if}
-                <span
-                  class="uiv2-collection__meta-item"
-                  class:uiv2-collection__meta-item--fav={localFavorite}
-                >
-                  <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconFlag(13, localFavorite)}</span>
-                  <span class="uiv2-collection__meta-text">{formatCount(localFavoritesCount)}</span>
-                </span>
-              {/if}
-            </p>
-          {/if}
-        </div>
-      {/if}
-    </div>
-
-    {#if variant === 'grid'}
-      <div class="uiv2-collection__body">
+      <div class="uiv2-collection__cover-text">
         <h3 class="uiv2-collection__title">{data.title}</h3>
-        {#if data.description}
-          <p class="uiv2-collection__desc">{data.description}</p>
-        {/if}
-        {#if typeof data.notesCount === 'number' || showFavoritesMeta}
-          <div class="uiv2-collection__foot">
+        {#if hasCoverMeta}
+          <p class="uiv2-collection__cover-meta">
+            {#if typeof data.releaseCount === 'number'}
+              <span class="uiv2-collection__meta-item">
+                <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconFilm(13)}</span>
+                <span class="uiv2-collection__meta-text">{data.releaseCount} {releaseWord(data.releaseCount)}</span>
+              </span>
+            {/if}
             {#if typeof data.notesCount === 'number'}
-              <span class="uiv2-collection__chip" aria-label="Комментарии: {data.notesCount}">
-                {@html iconMessageCircle(14)}
-                <span>{formatCount(data.notesCount)}</span>
+              {#if typeof data.releaseCount === 'number'}
+                <span class="uiv2-collection__meta-sep" aria-hidden="true">·</span>
+              {/if}
+              <span class="uiv2-collection__meta-item">
+                <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconMessageCircle(13)}</span>
+                <span class="uiv2-collection__meta-text">{formatCount(data.notesCount)}</span>
               </span>
             {/if}
             {#if showFavoritesMeta}
-              {#if onFavoriteChange}
-                <button
-                  type="button"
-                  class="uiv2-collection__chip uiv2-collection__chip--action"
-                  class:uiv2-collection__chip--on={localFavorite}
-                  aria-pressed={localFavorite}
-                  aria-label={localFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
-                  onclick={onFavoriteChip}
-                  onkeydown={(e) => e.stopPropagation()}
-                >
-                  {@html iconFlag(14, localFavorite)}
-                  <span>{formatCount(localFavoritesCount)}</span>
-                </button>
-              {:else}
-                <span class="uiv2-collection__chip" class:uiv2-collection__chip--on={localFavorite}>
-                  {@html iconFlag(14, localFavorite)}
-                  <span>{formatCount(localFavoritesCount)}</span>
-                </span>
+              {#if typeof data.releaseCount === 'number' || typeof data.notesCount === 'number'}
+                <span class="uiv2-collection__meta-sep" aria-hidden="true">·</span>
               {/if}
+              <span
+                class="uiv2-collection__meta-item"
+                class:uiv2-collection__meta-item--fav={localFavorite}
+              >
+                <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconFlag(13, localFavorite)}</span>
+                <span class="uiv2-collection__meta-text">{formatCount(localFavoritesCount)}</span>
+              </span>
             {/if}
-          </div>
+          </p>
         {/if}
       </div>
-    {/if}
+    </div>
   </div>
 </article>
 

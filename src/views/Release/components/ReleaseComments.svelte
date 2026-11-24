@@ -1,6 +1,8 @@
 <script lang="ts">
   import { CommentsSection } from '../../../components/comments';
   import { navigate } from '../../../stores/navigation';
+  import { openCommentsPanel } from '../../../stores/comments-panel';
+  import { isMobileMode } from '../../../platform/mobile';
   import { normalizeCommentsFromResponse } from '../../../utils/comment';
   import type { CommentData } from '../../../types/comment';
 
@@ -17,6 +19,19 @@
   let selfProfileId = $state<number | null>(null);
   let loadedItems = $state<CommentData[]>([]);
   let loading = $state(false);
+
+  /**
+   * «Показать всё»: на ПК комментарии открываются правой панелью поверх тайтла,
+   * на телефоне — отдельной страницей (там панели нет).
+   */
+  function showAllComments() {
+    if (isMobileMode()) {
+      navigate(`/release/${releaseId}/comments`);
+      return;
+    }
+    const title = String((commentsRoot?.title_ru ?? commentsRoot?.title_original ?? '') || '').trim();
+    openCommentsPanel({ kind: 'release', id: releaseId, title });
+  }
 
   $effect(() => {
     releaseId;
@@ -75,7 +90,7 @@
       <button
         type="button"
         class="anix-comments__show-all"
-        onclick={() => navigate(`/release/${releaseId}/comments`)}
+        onclick={showAllComments}
       >
         Показать всё
       </button>
@@ -89,6 +104,6 @@
     {releaseId}
     {selfProfileId}
     showComposer={true}
-    showAllHref={`/release/${releaseId}/comments`}
+    onShowAll={showAllComments}
   />
 {/if}

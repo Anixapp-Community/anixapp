@@ -118,19 +118,24 @@ export function setReleaseFriendsLayout(layout: ReleaseFriendsLayout): void {
 
 const SCHEDULE_PANEL_WIDTH_KEY = 'anixapp.schedulePanelWidth';
 const PROFILE_PANEL_WIDTH_KEY = 'anixapp.profilePanelWidth';
+const COMMENTS_PANEL_WIDTH_KEY = 'anixapp.commentsPanelWidth';
 
-/** Дефолты: 22rem / 26rem при 16px root */
+/** Дефолты: 22rem / 26rem / 30rem при 16px root */
 export const DEFAULT_SCHEDULE_PANEL_WIDTH_PX = 352;
 export const DEFAULT_PROFILE_PANEL_WIDTH_PX = 416;
+export const DEFAULT_COMMENTS_PANEL_WIDTH_PX = 480;
 export const SIDEBAR_PANEL_WIDTH_MIN_PX = 380;
 export const SIDEBAR_PANEL_WIDTH_MAX_PX = 720;
 
 function readPanelWidthPx(key: string, fallback: number): number {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
-    return fallback;
+    return clampSidebarPanelWidthPx(fallback);
   }
-  const raw = Number(window.localStorage.getItem(key));
-  if (!Number.isFinite(raw)) return fallback;
+  const stored = window.localStorage.getItem(key);
+  // `Number(null)` — это 0, поэтому без проверки на пустое значение дефолт никогда не применялся.
+  if (stored == null || stored.trim() === '') return clampSidebarPanelWidthPx(fallback);
+  const raw = Number(stored);
+  if (!Number.isFinite(raw)) return clampSidebarPanelWidthPx(fallback);
   return clampSidebarPanelWidthPx(raw);
 }
 
@@ -161,6 +166,17 @@ export function setProfilePanelWidthPx(widthPx: number): number {
   const next = clampSidebarPanelWidthPx(widthPx);
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return next;
   window.localStorage.setItem(PROFILE_PANEL_WIDTH_KEY, String(next));
+  return next;
+}
+
+export function getCommentsPanelWidthPx(): number {
+  return readPanelWidthPx(COMMENTS_PANEL_WIDTH_KEY, DEFAULT_COMMENTS_PANEL_WIDTH_PX);
+}
+
+export function setCommentsPanelWidthPx(widthPx: number): number {
+  const next = clampSidebarPanelWidthPx(widthPx);
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return next;
+  window.localStorage.setItem(COMMENTS_PANEL_WIDTH_KEY, String(next));
   return next;
 }
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import type { Snippet } from 'svelte';
   import { navigate, goBack, goForward, navigateSidebarTab } from '../stores/navigation';
   import { openAdminArea, restoreAdminSession, checkTeamMembership, isTeamMember } from '../stores/admin';
@@ -16,6 +17,7 @@
   import LobbyNowWatching from '../components/LobbyNowWatching.svelte';
   import SidebarSchedulePanel from '../components/SidebarSchedulePanel.svelte';
   import SidebarProfilePanel from '../components/SidebarProfilePanel.svelte';
+  import CommentsPanel from '../components/CommentsPanel.svelte';
   import SettingsModal from '../components/SettingsModal.svelte';
   import SidebarPanelResizeHandle from '../components/SidebarPanelResizeHandle.svelte';
   import SidebarPins from '../components/SidebarPins.svelte';
@@ -35,8 +37,15 @@
     toggleProfilePanel,
   } from '../stores/profile-panel';
   import {
+    commentsPanelOpen,
+    commentsPanelTarget,
+    closeCommentsPanel,
+  } from '../stores/comments-panel';
+  import {
+    getCommentsPanelWidthPx,
     getProfilePanelWidthPx,
     getSchedulePanelWidthPx,
+    setCommentsPanelWidthPx,
     setProfilePanelWidthPx,
     setSchedulePanelWidthPx,
     getSidebarNavChromeSide,
@@ -113,6 +122,13 @@
 
   let schedulePanelWidthPx = $state(getSchedulePanelWidthPx());
   let profilePanelWidthPx = $state(getProfilePanelWidthPx());
+  let commentsPanelWidthPx = $state(getCommentsPanelWidthPx());
+
+  /** Комментарии: панель в DOM (outro) и визуально открытая (CSS --open). */
+  let commentsVisible = $state(false);
+  let commentsActive = $state(false);
+  let commentsCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  const commentsTarget = $derived($commentsPanelTarget);
 
   function clearScheduleCloseTimer() {
     if (scheduleCloseTimer != null) {
@@ -132,6 +148,13 @@
     if (settingsCloseTimer != null) {
       clearTimeout(settingsCloseTimer);
       settingsCloseTimer = null;
+    }
+  }
+
+  function clearCommentsCloseTimer() {
+    if (commentsCloseTimer != null) {
+      clearTimeout(commentsCloseTimer);
+      commentsCloseTimer = null;
     }
   }
 
@@ -182,6 +205,47 @@
       openProfileAfterSettingsClose = null;
       actuallyOpenProfile(pendingId);
     }
+  }
+
+  function finishCommentsClose() {
+    if (!commentsActive) commentsVisible = false;
+    clearCommentsCloseTimer();
+  }
+
+  function actuallyOpenComments() {
+    if (!commentsTarget) return;
+    clearCommentsCloseTimer();
+    if (commentsVisible && commentsActive) return;
+    commentsVisible = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        commentsActive = true;
+      });
+    });
+  }
+
+  function openComments() {
+    if (!commentsTarget || commentsActive) return;
+    // Комментарии живут в той же правой колонке, что расписание/профиль/настройки:
+    // остальные панели убираем сразу, без обратной анимации.
+    if (settingsVisible) closeSettings(true);
+    if (profileVisible) closeProfile(true);
+    if (scheduleVisible) closeSchedule(true);
+    actuallyOpenComments();
+  }
+
+  function closeComments(immediate = false) {
+    if (!commentsVisible) return;
+    commentsActive = false;
+    // Панель открывает и другая панель (только что), поэтому стор держим в согласии:
+    // иначе эффект `$commentsPanelOpen` тут же откроет её снова.
+    if (get(commentsPanelOpen)) commentsPanelOpen.set(false);
+    clearCommentsCloseTimer();
+    if (immediate) {
+      commentsVisible = false;
+      return;
+    }
+    commentsCloseTimer = setTimeout(finishCommentsClose, SCHEDULE_ANIM_MS + 50);
   }
 
   function actuallyOpenSchedule() {
@@ -235,6 +299,7 @@
     openSettingsAfterProfileClose = false;
     openSettingsAfterScheduleClose = false;
     openProfileAfterSettingsClose = null;
+    closeComments(true);
     if (settingsVisible) {
       openScheduleAfterSettingsClose = true;
       closeSettings(false);
@@ -285,6 +350,7 @@
     openSettingsAfterProfileClose = false;
     openSettingsAfterScheduleClose = false;
     openScheduleAfterSettingsClose = false;
+    closeComments(true);
     if (settingsVisible) {
       openProfileAfterSettingsClose = userId;
       closeSettings(false);
@@ -338,6 +404,7 @@
     openProfileAfterScheduleClose = null;
     openScheduleAfterSettingsClose = false;
     openProfileAfterSettingsClose = null;
+    closeComments(true);
     if (settingsVisible && settingsActive) return;
     if (profileVisible) {
       openSettingsAfterProfileClose = true;
@@ -419,6 +486,12 @@
     else if (settingsVisible && settingsActive) closeSettings();
   });
 
+  // Панель комментариев открывается стором (страница тайтла, «Показать всё», прямой адрес).
+  $effect(() => {
+    if ($commentsPanelOpen && commentsTarget) openComments();
+    else if (commentsVisible && commentsActive) closeComments();
+  });
+
   onMount(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       // Профиль закрывается только крестиком или расписанием — Esc только для расписания
@@ -431,6 +504,7 @@
         closeSettings();
       }
       if (e.key === 'Escape' && scheduleVisible && scheduleActive) closeSchedule();
+      if (e.key === 'Escape' && commentsVisible && commentsActive) closeCommentsPanel();
     };
     window.addEventListener('keydown', onKeyDown);
 
@@ -667,11 +741,11 @@
     {/if}
   </div>
 
-  {#if scheduleVisible || (profileVisible && panelUserId) || settingsVisible}
+  {#if scheduleVisible || (profileVisible && panelUserId) || settingsVisible || (commentsVisible && commentsTarget)}
     <button
       type="button"
       class="schedule-panel-backdrop"
-      class:schedule-panel-backdrop--open={scheduleActive || profileActive || settingsActive}
+      class:schedule-panel-backdrop--open={scheduleActive || profileActive || settingsActive || commentsActive}
       class:schedule-panel-backdrop--locked={$settingsBossFightLock && settingsActive}
       aria-label="Закрыть панель"
       onclick={() => {
@@ -679,6 +753,7 @@
         if (scheduleActive) closeSchedule();
         else if (profileActive) closeProfile();
         else if (settingsActive) closeSettings();
+        else if (commentsActive) closeCommentsPanel();
       }}
     ></button>
   {/if}
@@ -751,6 +826,31 @@
           }}
           onWidthCommit={(w) => {
             profilePanelWidthPx = setProfilePanelWidthPx(w);
+          }}
+        />
+      </div>
+    </aside>
+  {:else if commentsVisible && commentsTarget}
+    <aside
+      class="schedule-panel-wrap schedule-panel-wrap--comments"
+      class:schedule-panel-wrap--open={commentsActive}
+      aria-label="Комментарии"
+      aria-hidden={!commentsActive}
+    >
+      <div class="schedule-panel-shell schedule-panel-shell--comments" style={`width: ${commentsPanelWidthPx}px`}>
+        <div class="schedule-panel-shell__body">
+          {#key `${commentsTarget.kind}-${commentsTarget.id}-${commentsTarget.replyId ?? 0}`}
+            <CommentsPanel target={commentsTarget} />
+          {/key}
+        </div>
+        <SidebarPanelResizeHandle
+          widthPx={commentsPanelWidthPx}
+          label="Ширина комментариев"
+          onWidthChange={(w) => {
+            commentsPanelWidthPx = w;
+          }}
+          onWidthCommit={(w) => {
+            commentsPanelWidthPx = setCommentsPanelWidthPx(w);
           }}
         />
       </div>

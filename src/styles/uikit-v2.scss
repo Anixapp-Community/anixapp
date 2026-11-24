@@ -6237,7 +6237,6 @@ body.uiv2-scroll-dragging * {
     display: flex;
     flex-direction: column;
     flex: 1;
-    padding: 0.4rem;
     border-radius: 18px;
     overflow: hidden;
     border: 1px solid var(--uiv2-border-subtle);
@@ -6246,36 +6245,29 @@ body.uiv2-scroll-dragging * {
 
   &__media {
     width: 100%;
-    aspect-ratio: 16 / 9;
-    border-radius: 14px !important;
+    aspect-ratio: 16 / 10;
+    border-radius: 0 !important;
   }
 
-  &__footer {
+  &__overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.8rem 0.45rem 0.3rem;
+    gap: 0.45rem;
+    padding: 1rem 0.85rem 0.85rem;
   }
 
   &__title {
-    width: 68%;
+    width: 62%;
     height: 0.95rem;
   }
 
   &__meta {
-    width: 88%;
+    width: 46%;
     height: 0.72rem;
-  }
-
-  &__chips {
-    display: flex;
-    gap: 0.35rem;
-    margin-top: 0.3rem;
-  }
-
-  &__chip {
-    width: 3.2rem;
-    height: 1.75rem;
   }
 }
 
@@ -7181,7 +7173,6 @@ button.uiv2-air-cal__day {
 /* ——— V2 collection card ——— */
 .uiv2-collection {
   --uiv2-collection-radius: 18px;
-  --uiv2-collection-inset: 0.4rem;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -7264,10 +7255,6 @@ button.uiv2-air-cal__day {
     border-color 0.2s ease,
     box-shadow 0.25s ease;
 
-  .uiv2-collection--grid & {
-    padding: var(--uiv2-collection-inset);
-  }
-
   .uiv2-collection[role='button']:hover & {
     transform: translateY(-3px);
     border-color: color-mix(in srgb, var(--uikit-v2-text) 14%, transparent);
@@ -7277,36 +7264,12 @@ button.uiv2-air-cal__day {
   }
 }
 
-// Размытая обложка — цветная подсветка карточки в тон коллекции
-.uiv2-collection__ambient {
-  position: absolute;
-  top: -30%;
-  left: -30%;
-  z-index: -1;
-  width: 160%;
-  height: 160%;
-  object-fit: cover;
-  filter: blur(42px) saturate(1.3);
-  opacity: 0.08;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-
-  .uiv2-collection[role='button']:hover & {
-    opacity: 0.14;
-  }
-}
-
 .uiv2-collection__media {
   position: relative;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
-  border-radius: calc(var(--uiv2-collection-radius) - var(--uiv2-collection-inset));
+  border-radius: 0;
   background: var(--uiv2-surface-raised);
-
-  .uiv2-collection--cover & {
-    aspect-ratio: 16 / 10;
-    border-radius: 0;
-  }
 }
 
 .uiv2-collection__img {
@@ -7338,14 +7301,8 @@ button.uiv2-air-cal__day {
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.32) 0%, transparent 30%),
-    linear-gradient(0deg, rgba(0, 0, 0, 0.42) 0%, transparent 32%);
-
-  .uiv2-collection--cover & {
-    background:
-      linear-gradient(180deg, rgba(0, 0, 0, 0.42) 0%, transparent 30%),
-      linear-gradient(180deg, transparent 38%, rgba(0, 0, 0, 0.55) 68%, rgba(0, 0, 0, 0.88) 100%);
-  }
+    linear-gradient(180deg, rgba(0, 0, 0, 0.42) 0%, transparent 30%),
+    linear-gradient(180deg, transparent 38%, rgba(0, 0, 0, 0.55) 68%, rgba(0, 0, 0, 0.88) 100%);
 }
 
 .uiv2-collection__top {
@@ -7373,7 +7330,7 @@ button.uiv2-air-cal__day {
   pointer-events: none;
 }
 
-// Стеклянная плашка поверх обложки (приватность, число релизов)
+// Стеклянная плашка поверх обложки (приватность)
 .uiv2-collection__glass {
   display: inline-flex;
   align-items: center;
@@ -7396,13 +7353,6 @@ button.uiv2-air-cal__day {
     display: block;
     flex-shrink: 0;
   }
-}
-
-.uiv2-collection__count {
-  position: absolute;
-  left: 0.5rem;
-  bottom: 0.5rem;
-  z-index: 2;
 }
 
 .uiv2-collection__more-slot {
@@ -7454,20 +7404,12 @@ button.uiv2-air-cal__day {
   font-weight: 700;
   letter-spacing: -0.015em;
   line-height: 1.3;
-  color: var(--uikit-v2-text, #{$color-text});
+  color: var(--uiv2-on-image-fg);
+  text-shadow: var(--uiv2-on-image-shadow);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-
-  .uiv2-collection--grid & {
-    font-size: 1rem;
-  }
-
-  &--cover {
-    color: var(--uiv2-on-image-fg);
-    text-shadow: var(--uiv2-on-image-shadow);
-  }
 }
 
 .uiv2-collection__cover-meta {
@@ -7538,87 +7480,6 @@ button.uiv2-air-cal__day {
   opacity: 0.5;
   font-weight: 500;
   line-height: 1;
-}
-
-.uiv2-collection__body {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  gap: 0.35rem;
-  padding: 0.75rem 0.45rem 0.3rem;
-}
-
-.uiv2-collection__desc {
-  margin: 0;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: var(--uikit-v2-muted, #{$color-text-muted});
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.uiv2-collection__foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-  margin-top: auto;
-  padding-top: 0.4rem;
-}
-
-.uiv2-collection__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  height: 1.75rem;
-  padding: 0 0.65rem;
-  border: none;
-  border-radius: 999px;
-  background: var(--uiv2-card-pill-bg);
-  color: var(--uiv2-fg-soft);
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 600;
-  line-height: 1;
-
-  svg {
-    display: block;
-    flex-shrink: 0;
-  }
-
-  &--action {
-    cursor: pointer;
-    transition:
-      background 0.15s ease,
-      color 0.15s ease,
-      transform 0.15s ease;
-
-    &:hover {
-      background: var(--uiv2-chrome-bg-hover);
-      color: var(--uikit-v2-text);
-    }
-
-    &:active {
-      transform: scale(0.94);
-    }
-
-    &:focus-visible {
-      outline: 2px solid color-mix(in srgb, var(--uikit-v2-accent) 55%, transparent);
-      outline-offset: 2px;
-    }
-  }
-
-  &--on {
-    color: var(--uikit-v2-accent);
-    background: color-mix(in srgb, var(--uikit-v2-accent) 16%, transparent);
-
-    &.uiv2-collection__chip--action:hover {
-      color: var(--uikit-v2-accent);
-      background: color-mix(in srgb, var(--uikit-v2-accent) 24%, transparent);
-    }
-  }
 }
 
 .uikit-v2-collections-grid {
@@ -11008,10 +10869,11 @@ $uiv2-comment-thread: color-mix(in srgb, var(--uikit-v2-text) 16%, transparent);
   }
 }
 
-.uiv2-comment-composer__row {
+.uiv2-comment-composer__footer {
   display: flex;
-  align-items: flex-end;
-  gap: 0.65rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   min-width: 0;
 }
 
@@ -11039,9 +10901,41 @@ $uiv2-comment-thread: color-mix(in srgb, var(--uikit-v2-text) 16%, transparent);
     --uiv2-field-notch: var(--uikit-v2-bg, #{$color-bg});
   }
 
+  // Поле компактное, пока не начали писать: по фокусу и при введённом тексте раскрывается.
+  // `field-sizing: content` растит высоту под текст, поэтому скроллбар внутри поля не нужен.
   .uiv2-outlined-field__input--area {
-    min-height: 4.5rem;
+    height: auto;
+    min-height: 2.75rem;
     max-height: 12rem;
+    field-sizing: content;
+    resize: none;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    transition: min-height 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+
+    &::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+      display: none;
+    }
+  }
+
+  .uiv2-outlined-field--focused .uiv2-outlined-field__input--area,
+  .uiv2-outlined-field--floated .uiv2-outlined-field__input--area {
+    min-height: 6.25rem;
+  }
+
+  // В свёрнутом виде подпись стоит по центру поля, как в обычном однострочном инпуте.
+  .uiv2-outlined-field--multiline:not(.uiv2-outlined-field--focused):not(.uiv2-outlined-field--floated)
+    .uiv2-outlined-field__label {
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .uiv2-outlined-field__input--area {
+      transition: none;
+    }
   }
 
   .uiv2-outlined-field__hint {
@@ -11053,7 +10947,7 @@ $uiv2-comment-thread: color-mix(in srgb, var(--uikit-v2-text) 16%, transparent);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
 .uiv2-comment-composer__rules {

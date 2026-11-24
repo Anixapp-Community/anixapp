@@ -18,13 +18,9 @@
       </div>
       <div class="uiv2-collection-skeleton__card">
         <UiV2Skeleton tag="div" class="uiv2-collection-skeleton__media" rounded="none" />
-        <div class="uiv2-collection-skeleton__footer">
+        <div class="uiv2-collection-skeleton__overlay">
           <UiV2Skeleton tag="div" class="uiv2-collection-skeleton__title" rounded="sm" />
           <UiV2Skeleton tag="div" class="uiv2-collection-skeleton__meta" rounded="sm" />
-          <div class="uiv2-collection-skeleton__chips">
-            <UiV2Skeleton tag="div" class="uiv2-collection-skeleton__chip" rounded="pill" />
-            <UiV2Skeleton tag="div" class="uiv2-collection-skeleton__chip" rounded="pill" />
-          </div>
         </div>
       </div>
     </article>

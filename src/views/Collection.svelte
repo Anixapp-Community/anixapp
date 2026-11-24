@@ -26,6 +26,8 @@
   import { navigate } from '../stores/navigation';
   import { requireAuth } from '../stores/auth';
   import { handleUserProfileClick } from '../stores/user-profile';
+  import { openCommentsPanel } from '../stores/comments-panel';
+  import { isMobileMode } from '../platform/mobile';
   import { showToast } from '../stores/toast';
   import { COLLECTION_DELETE_ERROR_MESSAGES, resolveCollectionImage } from '../utils/collection';
   import { setDiscordContext, refreshDiscordPresence } from '../services/discord-presence';
@@ -71,6 +73,12 @@
   let collectionTitle = $state('');
   let collectionDesc = $state('');
   let collectionImage = $state('');
+  /** Обложка не загрузилась — вместо битой картинки показываем заглушку. */
+  let coverFailed = $state(false);
+  $effect(() => {
+    collectionImage;
+    coverFailed = false;
+  });
   /** Anixart 11+: анимированная обложка (видео) */
   let collectionCoverAnimation = $state('');
   let creationDate = $state(0);
@@ -79,6 +87,15 @@
   let isFavorite = $state(false);
   let favoritesCount = $state(0);
   let commentCount = $state(0);
+
+  /** «Показать всё» в комментариях: на ПК — правая панель, на телефоне — отдельная страница. */
+  function showAllComments() {
+    if (isMobileMode()) {
+      navigate(`/collection/${id}/comments`);
+      return;
+    }
+    openCommentsPanel({ kind: 'collection', id, title: collectionTitle });
+  }
 
   let authorId = $state<number | null>(null);
   let authorName = $state('');
@@ -395,8 +412,13 @@
   {:else}
     <div class="collection-page">
       <div class="collection-cover">
-        {#if collectionImage}
-          <img src={collectionImage} alt="" loading="eager" />
+        {#if collectionImage && !coverFailed}
+          <img
+            src={collectionImage}
+            alt=""
+            loading="eager"
+            onerror={() => { coverFailed = true; }}
+          />
           <AnimatedMediaOverlay src={collectionCoverAnimation} />
         {:else}
           <div class="collection-cover__placeholder">
@@ -526,7 +548,7 @@
           items={comments}
           totalCount={commentCount}
           previewLimit={COMMENTS_PREVIEW}
-          showAllHref={commentCount > COMMENTS_PREVIEW ? `/collection/${id}/comments` : undefined}
+          onShowAll={commentCount > COMMENTS_PREVIEW ? showAllComments : undefined}
           collectionId={id}
           showComposer={true}
           {selfProfileId}

@@ -369,10 +369,10 @@
   <!-- Collection card -->
   <section class="uikit-section">
     <h2 class="uikit-section__title">Карточка коллекции</h2>
-    <p class="uikit-section__desc">Сетка и cover-вариант как в мобильном приложении</p>
+    <p class="uikit-section__desc">Обложка с названием и метаданными поверх</p>
     <div class="uikit-collections">
       <CollectionCard data={SAMPLE_COLLECTION} />
-      <CollectionCard data={{ ...SAMPLE_COLLECTION, isFavorite: true }} variant="cover" />
+      <CollectionCard data={{ ...SAMPLE_COLLECTION, isFavorite: true }} />
     </div>
   </section>
 

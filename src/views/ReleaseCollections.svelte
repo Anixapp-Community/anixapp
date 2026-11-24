@@ -113,7 +113,7 @@
   {:else}
     <div class="collections-feed">
       {#each items as item (item.id)}
-        <CollectionCard data={item} variant="grid" />
+        <CollectionCard data={item} />
       {/each}
     </div>
     {#if hasMore}

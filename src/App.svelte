@@ -45,6 +45,7 @@
     scheduleDiscordPresenceSync,
   } from './services/discord-presence';
   import { openProfilePanel, openProfileBadgePanel } from './stores/profile-panel';
+  import { openCommentsPanel } from './stores/comments-panel';
   import { openProfileFromPath } from './stores/user-profile';
 
   import Layout from './layout/Layout.svelte';
@@ -297,10 +298,52 @@
   const channelMatch          = $derived(path.match(/^\/channel\/(\d+)$/));
   const collectionEditMatch   = $derived(path.match(/^\/collections\/edit\/(\d+)$/));
   const announcementChatMatch = $derived(path.match(/^\/announcement\/([^/]+)\/chat$/));
+  /** Страница тайтла/коллекции: сюда же ведёт маршрут комментариев — на ПК их открывает правая панель. */
+  const releaseRouteId = $derived(
+    releaseMatch?.[1]
+      ? parseInt(releaseMatch[1], 10)
+      : releaseCommentsMatch?.[1]
+        ? parseInt(releaseCommentsMatch[1], 10)
+        : null,
+  );
+  const collectionRouteId = $derived(
+    collectionMatch?.[1]
+      ? parseInt(collectionMatch[1], 10)
+      : collectionCommentsMatch?.[1]
+        ? parseInt(collectionCommentsMatch[1], 10)
+        : null,
+  );
   const isWatchRoute = $derived(path === '/watch');
   /** Страница релиза на TV — фуллскрин по макету (без левой панели). */
   const isReleaseRoute = $derived(/^\/release\/\d+$/.test(path));
   const isComposerWindow = $derived(path === '/feed/composer');
+
+  // Комментарии на ПК — не страница, а правая панель поверх тайтла/коллекции.
+  // Прямой адрес /release/:id/comments открывает панель и нормализуется до страницы тайтла.
+  $effect(() => {
+    if (isMobileMode() || isTvMode()) return;
+
+    const releaseComments = releaseCommentsMatch;
+    if (releaseComments) {
+      const id = parseInt(releaseComments[1], 10);
+      if (!(id > 0)) return;
+      const replyRaw = Number(getSearchParams().get('reply') ?? '');
+      openCommentsPanel({
+        kind: 'release',
+        id,
+        replyId: Number.isFinite(replyRaw) ? replyRaw : null,
+      });
+      queueMicrotask(() => replacePath(`/release/${id}`));
+      return;
+    }
+
+    const collectionComments = collectionCommentsMatch;
+    if (!collectionComments) return;
+    const collectionId = parseInt(collectionComments[1], 10);
+    if (!(collectionId > 0)) return;
+    openCommentsPanel({ kind: 'collection', id: collectionId });
+    queueMicrotask(() => replacePath(`/collection/${collectionId}`));
+  });
 
   // ── App screen state machine ───────────────────────────────────────────────
   let offlineRetryTimer: number | null = null;
@@ -1024,13 +1067,13 @@
           commentId={parseInt(releaseCommentRepliesMatch[2], 10)}
         />
       {/key}
-    {:else if releaseCommentsMatch}
+    {:else if releaseCommentsMatch && isMobileMode()}
       {#key releaseCommentsMatch[1]}
         <ReleaseCommentsPage releaseId={parseInt(releaseCommentsMatch[1], 10)} />
       {/key}
-    {:else if releaseMatch}
-      {#key releaseMatch[1]}
-        <Release id={parseInt(releaseMatch[1], 10)} />
+    {:else if releaseRouteId != null}
+      {#key releaseRouteId}
+        <Release id={releaseRouteId} />
       {/key}
     {:else if profileListsId != null}
       {#key profileListsId}
@@ -1063,13 +1106,13 @@
       {/key}
     {:else if path === '/collections/create'}
       <CollectionEditor />
-    {:else if collectionCommentsMatch}
+    {:else if collectionCommentsMatch && isMobileMode()}
       {#key collectionCommentsMatch[1]}
         <CollectionCommentsPage collectionId={parseInt(collectionCommentsMatch[1], 10)} />
       {/key}
-    {:else if collectionMatch}
-      {#key collectionMatch[1]}
-        <Collection id={parseInt(collectionMatch[1], 10)} />
+    {:else if collectionRouteId != null}
+      {#key collectionRouteId}
+        <Collection id={collectionRouteId} />
       {/key}
     {:else if path === '/admin/panel'}
       <AdminPanelPage />

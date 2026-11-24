@@ -4,6 +4,7 @@
   import { navigate } from '../../stores/navigation';
   import { requireAuth } from '../../stores/auth';
   import { handleUserProfileClick } from '../../stores/user-profile';
+  import { uiv2CustomScroll } from '../../actions/uiv2CustomScroll';
   import UiV2SectionHeader from '../uikit-v2/UiV2SectionHeader.svelte';
   import UiV2CommentThread, {
     type UiV2CommentNode,
@@ -33,6 +34,8 @@
     totalCount?: number;
     previewLimit?: number;
     showAllHref?: string;
+    /** Своё действие для «Показать всё» (например, правая панель вместо страницы). */
+    onShowAll?: () => void;
     releaseId?: number;
     /** Комментарии коллекции вместо релиза */
     collectionId?: number;
@@ -40,6 +43,10 @@
     showComposer?: boolean;
     composerDock?: boolean;
     asSection?: boolean;
+    /** id секции и префикс id композера: у панели он свой, чтобы не дублировать страничные. */
+    domId?: string;
+    /** Кастомный скроллбар UI Kit V2 вместо нативного (в правой панели). */
+    customScroll?: boolean;
     selfProfileId?: number | null;
     initialReplyId?: number | null;
     prepend?: Snippet;
@@ -59,12 +66,15 @@
     totalCount,
     previewLimit = 5,
     showAllHref,
+    onShowAll,
     releaseId,
     collectionId,
     mode = 'preview',
     showComposer = false,
     composerDock = false,
     asSection = true,
+    domId = 'comments',
+    customScroll = false,
     selfProfileId = null,
     initialReplyId = null,
     prepend,
@@ -81,8 +91,11 @@
   let submitting = $state(false);
   let initialReplyApplied = $state(false);
   let scrollRootEl = $state<HTMLElement | null>(null);
+  let sectionEl = $state<HTMLElement | null>(null);
   let dockReplyLogin = $state<string | null>(null);
   let dockReplyParent = $state<UiV2CommentNode | null>(null);
+
+  const composerDomId = $derived(`${domId}-composer`);
 
   $effect(() => {
     const next = items.map((c) => commentDataToUiV2Node(c));
@@ -102,7 +115,7 @@
 
   const isPreview = $derived(mode === 'preview');
   const visibleNodes = $derived(isPreview ? nodes.slice(0, previewLimit) : nodes);
-  const showHeaderLink = $derived(isPreview && !!showAllHref);
+  const showHeaderLink = $derived(isPreview && (!!showAllHref || !!onShowAll));
   const showHeader = $derived(Boolean(title) || Boolean(subtitle) || showHeaderLink);
   const useInlineComposer = $derived(showComposer && !!targetId && !composerDock);
   const useInlineReply = $derived(!composerDock);
@@ -126,8 +139,10 @@
 
   function focusComposer() {
     queueMicrotask(() => {
-      document
-        .querySelector<HTMLTextAreaElement>('#comments-composer textarea, #comments-composer [id^="uiv2-composer-"]')
+      sectionEl
+        ?.querySelector<HTMLTextAreaElement>(
+          `#${composerDomId} textarea, #${composerDomId} [id^="uiv2-composer-"]`,
+        )
         ?.focus();
     });
   }
@@ -304,6 +319,10 @@
   }
 
   function openAll() {
+    if (onShowAll) {
+      onShowAll();
+      return;
+    }
     if (showAllHref) navigate(showAllHref);
   }
 
@@ -367,15 +386,33 @@
   {/if}
 {/snippet}
 
+{#snippet scrollContent()}
+  {@render prepend?.()}
+  {@render commentsBody()}
+{/snippet}
+
 {#if composerDock}
-  <section class="anix-comments anix-comments--dock-layout" id="comments">
-    <div class="anix-comments__scroll-body" bind:this={scrollRootEl}>
-      {@render prepend?.()}
-      {@render commentsBody()}
-    </div>
+  <section class="anix-comments anix-comments--dock-layout" id={domId} bind:this={sectionEl}>
+    {#if customScroll}
+      <div
+        class="anix-comments__scroll-pane uiv2-scroll-area uiv2-scroll-area--y"
+        use:uiv2CustomScroll={{ axis: 'y', viewportSelector: '.anix-comments__scroll-body' }}
+      >
+        <div class="anix-comments__scroll-body uiv2-scroll-area__viewport" bind:this={scrollRootEl}>
+          {@render scrollContent()}
+        </div>
+        <div class="uiv2-scroll-area__v-track" aria-hidden="true">
+          <div class="uiv2-scroll-area__v-thumb"></div>
+        </div>
+      </div>
+    {:else}
+      <div class="anix-comments__scroll-body" bind:this={scrollRootEl}>
+        {@render scrollContent()}
+      </div>
+    {/if}
 
     {#if showComposer && targetId}
-      <div class="anix-comments__dock uiv2-comments-composer" id="comments-composer">
+      <div class="anix-comments__dock uiv2-comments-composer" id={composerDomId}>
         <UiV2CommentComposer
           busy={submitting}
           replyToLogin={dockReplyLogin}
@@ -390,7 +427,7 @@
     {/if}
   </section>
 {:else}
-  <section class="anix-comments" id="comments" class:anix-comments--section={asSection}>
+  <section class="anix-comments" id={domId} class:anix-comments--section={asSection}>
     {@render commentsBody()}
   </section>
 {/if}

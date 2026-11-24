@@ -12,7 +12,6 @@
 @use 'profile';
 @use 'profile-v2';
 @use 'select';
-@use 'collection-card';
 @use 'collection-page';
 @use 'title-info-popover';
 @use 'user-avatar';
@@ -27,6 +26,7 @@
 @use 'connection-banner';
 
 @use 'comments';
+@use 'comments-panel';
 @use 'overview';
 @use 'discover-pages';
 @use 'collections-page';

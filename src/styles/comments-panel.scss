@@ -1,0 +1,164 @@
+@use 'variables' as *;
+
+// ——— Правая панель комментариев (uikit-v2) ———
+// Открывается с «Показать всё» на странице тайтла/коллекции вместо отдельной страницы.
+
+.comments-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  color: var(--uikit-v2-text);
+  background: var(--uikit-v2-bg);
+  // Как у остальных панелей: grayscale AA поверх translate3d
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.comments-panel__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  flex-shrink: 0;
+  padding: 0.95rem 0.85rem 0.55rem 1rem;
+}
+
+.comments-panel__heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.comments-panel__title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--uikit-v2-text);
+}
+
+// Название тайтла — целиком, переносом строк: без обрезки и без тултипа.
+.comments-panel__subject {
+  margin: 0.3rem 0 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--uiv2-fg-soft);
+  overflow-wrap: break-word;
+}
+
+.comments-panel__close {
+  flex-shrink: 0;
+}
+
+.comments-panel__tools {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  flex-shrink: 0;
+  padding: 0 0.85rem 0.7rem 1rem;
+  border-bottom: 1px solid var(--uiv2-border-subtle);
+  background: var(--uikit-v2-bg);
+  // Мягкая тень, чтобы список уходил под шапку, как на странице комментариев
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--uikit-v2-bg) 62%, transparent);
+}
+
+.comments-panel__count {
+  min-height: 1.15rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--uiv2-fg-muted);
+  white-space: nowrap;
+}
+
+// Пилюля сортировки — как фильтры в закладках/каталоге
+.comments-sort-field {
+  max-width: min(100%, 16rem);
+  margin-left: auto;
+  font-weight: 500;
+
+  .uiv2-btn__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.comments-panel__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.comments-panel__state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.1rem 1rem 1.5rem;
+}
+
+.comments-panel__state--error {
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  text-align: center;
+}
+
+.comments-panel__state-text {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--uiv2-fg-muted);
+}
+
+.comments-panel {
+  .anix-comments--dock-layout {
+    margin-top: 0;
+    gap: 0;
+  }
+
+  // Панель сама отдаёт отступы — тред и композер ближе к краям
+  .anix-comments__scroll-body {
+    padding: 0.35rem 0.85rem 1.25rem 1rem;
+  }
+
+  .anix-comments__dock {
+    position: relative;
+    // Ниже линии-обводки шелла (z-index 4): глобальный z-index 20 у дока
+    // перекрывал её и «обрезал» левую полоску панели.
+    z-index: 1;
+    padding: 0.65rem 1rem 0.7rem;
+    border-top: 1px solid var(--uiv2-border-subtle);
+    background: var(--uikit-v2-bg);
+  }
+
+  .anix-comments__empty {
+    padding: 2rem 0;
+  }
+
+  .anix-comments__load-status {
+    font-size: 0.8125rem;
+  }
+
+  // В узкой панели лишний воздух у аватара только мешает
+  .uiv2-comment {
+    --uiv2-avatar-size: 2.35rem;
+    --uiv2-thread-col-gap: 0.6rem;
+    padding: 0.75rem 0;
+
+    &--nested {
+      --uiv2-avatar-size: 2rem;
+      --uiv2-thread-col-gap: 0.5rem;
+      padding: 0.5rem 0;
+    }
+  }
+}
