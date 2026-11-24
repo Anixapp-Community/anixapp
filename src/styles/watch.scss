@@ -319,6 +319,11 @@ $p-skip-dark:   #66c94280;
 
 .watch-page__video { background: #000; }
 
+.watch-page__iframe[hidden],
+.watch-page__video[hidden] {
+  display: none;
+}
+
 .watch-page__debug-hud {
   position: absolute;
   left: 10px;

@@ -5,10 +5,12 @@
    * с превью, вертикальный справа — громкость, слева — яркость, удержание — 2×. Экран всегда альбомный.
    */
   import { onDestroy, onMount, tick, untrack } from 'svelte';
+  import { isCustomSourceId } from '../../../electron/lib/custom-sources.mjs';
   import { fade } from 'svelte/transition';
   import { getWatchParams } from '../../router';
   import { navigate } from '../../stores/navigation';
   import { PlayerCore } from '../Watch/core/PlayerCore';
+  import type { StreamQuality } from '../Watch/core/hls-engine';
   import { refererForMediaUrl } from '../Watch/core/hls-media-context';
   import { getFluoPlayer, installWindowFluo } from '../../fluo';
   import { allowsIframeFallback, backupMediaProxyUrl, userPlaybackError } from '../Watch/_utils';
@@ -65,7 +67,7 @@
   } from '../../components/icons';
 
   type LoadState = 'loading' | 'ready' | 'error';
-  type Episode = { position: number; name: string; url: string; iframe: boolean };
+  type Episode = { position: number; name: string; url: string; iframe: boolean; qualityMap?: Record<string, string>; currentQuality?: string };
   type Sheet = 'episodes' | 'settings' | null;
   type Gesture = 'none' | 'seek' | 'volume' | 'brightness';
 
@@ -112,6 +114,7 @@
   let lastSystemVolumeIndex = -1;
   let playbackRate = $state(1);
   let qualityMap = $state<Record<string, string>>({});
+  let streamQuality = $state<StreamQuality | null>(null);
   let currentQuality = $state('auto');
   let seekStep = $state(DEFAULT_PLAYER_HOTKEYS.seekSeconds);
   let rewindStep = $state(DEFAULT_PLAYER_HOTKEYS.rewindSeconds);
@@ -178,7 +181,7 @@
   });
 
   const qualityOptions = $derived.by(() => {
-    const keys = Object.keys(qualityMap).sort((a, b) => Number.parseInt(b, 10) - Number.parseInt(a, 10));
+    const keys = (streamQuality?.heights ?? Object.keys(qualityMap)).slice().sort((a, b) => Number(b) - Number(a));
     return [{ id: 'auto', label: 'Авто' }, ...keys.map((k) => ({ id: k, label: `${Number.parseInt(k, 10) || k}p` }))];
   });
 
@@ -578,6 +581,7 @@
   }
 
   function applyMedia(nextUrl: string, nextUseVideo: boolean, nextEpPos: number, seekTime?: number, initialPaused?: boolean) {
+    streamQuality = null;
     playUrl = nextUrl;
     useVideo = nextUseVideo;
     ep = nextEpPos;
@@ -601,12 +605,12 @@
     });
     window.history.replaceState(null, '', `/watch?${qs.toString()}`);
 
-    if (!nextUseVideo && !allowsIframeFallback(core.origEpUrl || nextUrl)) {
+    if (!nextUseVideo && (isCustomSourceId(sourceId) || !allowsIframeFallback(core.origEpUrl || nextUrl))) {
       showError(core.origEpUrl || nextUrl);
       return;
     }
 
-    const proxyUrl = nextUseVideo && isCapacitorNative()
+    const proxyUrl = nextUseVideo && !isCustomSourceId(sourceId) && isCapacitorNative()
       ? backupMediaProxyUrl(nextUrl, refererForMediaUrl(nextUrl))
       : null;
     const usingBackupProxy = nextUseVideo && /\/tv\/media\?/.test(nextUrl);
@@ -629,10 +633,16 @@
       releaseId,
       sourceId,
       syncPlaybackRate: () => { if (videoEl) videoEl.playbackRate = playbackRate; },
+      onStreamQuality: (quality) => {
+        if (isCustomSourceId(sourceId) && quality.heights.length && Object.keys(qualityMap).length <= 1) {
+          streamQuality = quality;
+          currentQuality = 'auto';
+        }
+      },
       onFallback: () => {
         switching = false;
         if (retryThroughProxy(videoEl?.currentTime ?? seekTime, videoEl?.paused ?? initialPaused)) return;
-        if (core.origEpUrl && allowsIframeFallback(core.origEpUrl)) {
+        if (!isCustomSourceId(sourceId) && core.origEpUrl && allowsIframeFallback(core.origEpUrl)) {
           applyMedia(core.origEpUrl, false, nextEpPos, seekTime, initialPaused);
           return;
         }
@@ -670,7 +680,7 @@
     const api = window.anixApi?.release;
     if (!api?.getEpisodes || rId == null || sId == null || dId == null) return [];
     const res = await api.getEpisodes(rId, dId, sId);
-    return (res?.episodes ?? []).filter((row: Episode) => !!row?.url);
+    return (res?.episodes ?? []).filter((row: Episode) => !!row?.url || isCustomSourceId(sId));
   }
 
   async function loadEpisode(nextEpPos: number, seekTime?: number, initialPaused?: boolean) {
@@ -700,8 +710,8 @@
       if (myGen !== episodeLoadGen) return;
       skipDismissedKind = null;
       skipMarks = normalizeSkipMarks(resolved.skip);
-      qualityMap = resolved.qualityMap ?? {};
-      currentQuality = resolved.currentQuality || 'auto';
+      qualityMap = episode.qualityMap ?? resolved.qualityMap ?? {};
+      currentQuality = episode.currentQuality || resolved.currentQuality || 'auto';
       applyMedia(resolved.playUrl, resolved.useVideo, nextEpPos, seekTime, initialPaused);
       void window.anixApi?.history?.markWatched?.(rId, sId, nextEpPos);
     } catch {
@@ -752,6 +762,10 @@
   }
 
   function applyQuality(qualityId: string) {
+    if (streamQuality) {
+      if (streamQuality.select(qualityId)) currentQuality = qualityId;
+      return;
+    }
     currentQuality = qualityId;
     if (!useVideo || !videoEl) return;
     const url = qualityId === 'auto'

@@ -5,6 +5,9 @@ import { attachApiFailover, installProxyKeyFetch, isProxyUrl, proxyKey } from '.
 import { ANIXART_UA, attachAnixErrorMessages, enrichAnixError } from './anix-errors';
 import { isTvBuild } from '../platform/tv';
 import { tvBridgeInvokeUrl } from '../constants/tv-bridge';
+import { createCustomSources } from '../../electron/lib/custom-sources.mjs';
+
+const customSources = createCustomSources();
 
 const CONFIG_KEY = 'anixapp.native.config';
 const ACCOUNTS_KEY = 'anixapp.native.accounts';
@@ -699,17 +702,30 @@ export function createBrowserAnixBridge() {
     'anix:getDubbers': h((c, releaseId) => {
       const id = toPositiveInt(releaseId);
       if (id == null) return { types: [] };
-      return c.getClient().endpoints.release.getDubbers(id);
+      return customSources.getDubbers(c.getClient().endpoints.release, id);
     }),
     'anix:typeAll': h((c) => c.getClient().endpoints.type.types()),
     'anix:typePin': h((c, releaseId, typeId) => c.getClient().endpoints.type.pin(toPositiveInt(releaseId), toPositiveInt(typeId))),
     'anix:typeUnpin': h((c, releaseId, typeId) => c.getClient().endpoints.type.unpin(toPositiveInt(releaseId), toPositiveInt(typeId))),
-    'anix:getDubberSources': h((c, releaseId, dubberId) =>
-      c.getClient().endpoints.release.getDubberSources(toPositiveInt(releaseId), toPositiveInt(dubberId))),
-    'anix:getEpisodes': h((c, releaseId, dubberId, sourceId, sort = 1) =>
-      c.getClient().endpoints.release.getEpisodes(toPositiveInt(releaseId), toPositiveInt(dubberId), toPositiveInt(sourceId), sort)),
-    'anix:getEpisode': h((c, releaseId, sourceId, episodePosition) =>
-      c.getClient().endpoints.release.getEpisode(toPositiveInt(releaseId), toPositiveInt(sourceId), episodePosition)),
+    'anix:getDubberSources': h((c, releaseId, dubberId) => {
+      const id = toPositiveInt(releaseId);
+      const dub = toPositiveInt(dubberId);
+      if (id == null || dub == null) return { sources: [] };
+      return customSources.getDubberSources(c.getClient().endpoints.release, id, dub);
+    }),
+    'anix:getEpisodes': h((c, releaseId, dubberId, sourceId, sort = 1) => {
+      const id = toPositiveInt(releaseId);
+      const dub = toPositiveInt(dubberId);
+      const source = toPositiveInt(sourceId);
+      if (id == null || dub == null || source == null) return { episodes: [] };
+      return customSources.getEpisodes(c.getClient().endpoints.release, id, dub, source, sort);
+    }),
+    'anix:getEpisode': h((c, releaseId, sourceId, episodePosition) => {
+      const id = toPositiveInt(releaseId);
+      const source = toPositiveInt(sourceId);
+      if (id == null || source == null) return { episode: null };
+      return customSources.getEpisode(c.getClient().endpoints.release, id, source, episodePosition);
+    }),
     'anix:getEpisodeUpdates': h((c, releaseId, page = 0) =>
       c.getClient().endpoints.release.episodeUpdates?.(toPositiveInt(releaseId), page)),
     'anix:getDirectVideoLink': async (_c, args) => {

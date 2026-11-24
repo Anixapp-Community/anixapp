@@ -1,5 +1,7 @@
 'use strict';
 
+const { getCustomSources } = require('../lib/custom-sources-node');
+
 const { ipcMain } = require('electron');
 const { BookmarkType, BookmarkSortType, DefaultResult } = require('anixapi');
 const { broadcastBookmarksChanged } = require('../lib/broadcast');
@@ -98,7 +100,7 @@ ipcMain.handle('anix:getDubbers', async (_, releaseId) => {
   if (id == null) return { types: [] };
   try {
     const client = getAnixart();
-    return await client.endpoints.release.getDubbers(id);
+    return await (await getCustomSources()).getDubbers(client.endpoints.release, id);
   } catch (err) {
     handleAnixError(err, 'getDubbers');
   }
@@ -143,7 +145,7 @@ ipcMain.handle('anix:getDubberSources', async (_, releaseId, dubberId) => {
   if (id == null || dubId == null) return { sources: [] };
   try {
     const client = getAnixart();
-    return await client.endpoints.release.getDubberSources(id, dubId);
+    return await (await getCustomSources()).getDubberSources(client.endpoints.release, id, dubId);
   } catch (err) {
     handleAnixError(err, 'getDubberSources');
   }
@@ -156,7 +158,7 @@ ipcMain.handle('anix:getEpisodes', async (_, releaseId, dubberId, sourceId, sort
   if (id == null || dubId == null || srcId == null) return { episodes: [] };
   try {
     const client = getAnixart();
-    return await client.endpoints.release.getEpisodes(id, dubId, srcId, sort);
+    return await (await getCustomSources()).getEpisodes(client.endpoints.release, id, dubId, srcId, sort);
   } catch (err) {
     handleAnixError(err, 'getEpisodes');
   }
@@ -169,7 +171,7 @@ ipcMain.handle('anix:getEpisode', async (_, releaseId, sourceId, episodePosition
   if (id == null || srcId == null || ep == null) return { episode: null };
   try {
     const client = getAnixart();
-    return await client.endpoints.release.getEpisode(id, srcId, ep);
+    return await (await getCustomSources()).getEpisode(client.endpoints.release, id, srcId, ep);
   } catch (err) {
     handleAnixError(err, 'getEpisode');
   }

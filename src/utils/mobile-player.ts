@@ -5,6 +5,7 @@ import { isMobileMode } from '../platform/mobile';
  */
 import { launchPlayer, playerWindowOpener, type WatchLaunchParams } from './watch-nav';
 import { externalPlayerUsesPlaylist } from './player-integration';
+import { isCustomSourceId } from '../../electron/lib/custom-sources.mjs';
 
 export type MobilePlayerKind = 'web' | 'builtin' | 'external';
 
@@ -420,7 +421,7 @@ export async function launchWithKind(
   params: WatchLaunchParams,
   opts: ExternalLaunchOpts = {},
 ): Promise<MobileLaunchResult> {
-  if (kind === 'builtin') {
+  if (kind === 'builtin' || isCustomSourceId(params.sourceId)) {
     await launchPlayer(params);
     return { started: true };
   }

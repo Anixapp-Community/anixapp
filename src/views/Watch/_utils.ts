@@ -35,10 +35,12 @@ export function isLibriaHtmlEmbed(url: string): boolean {
 /** Sibnet/Libria iframe бесполезен: мёртвый ролик или страница с 404.png. */
 export function allowsIframeFallback(url: string): boolean {
   if (!url) return false;
+  if (url.startsWith('anix-stream:')) return false;
   if (/sibnet\.ru/i.test(url)) return false;
   if (isLibriaHtmlEmbed(url) || /libria\.fun|anilibria|aniliberty/i.test(url)) return false;
   return true;
 }
+
 
 export function userPlaybackError(url: string, code?: string | null): string {
   if (code === 'libria-release-missing') {
@@ -120,7 +122,9 @@ export function toCorsSafePlayUrl(url: string, referer?: string): string {
     const parsed = new URL(url.startsWith('http') ? url : `https:${url}`);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return url;
     if (!hostNeedsMediaProxy(parsed.hostname)) return url;
-    const ref = referer?.trim();
+    const ref = /(^|\.)okcdn\.ru$/i.test(parsed.hostname) && referer === url
+      ? undefined
+      : referer?.trim();
     const cookie = getEmbedCookie();
     if (import.meta.env.PROD && isTvBuild()) {
       return tvBridgeMediaUrl(parsed.href, ref, cookie || undefined);
@@ -139,6 +143,10 @@ export function isHlsUrl(url: string): boolean {
   // VK / OK CDN: master/media playlist без расширения .m3u8
   if (/okcdn\.ru/i.test(url) && /\/video\/?(\?|$)/i.test(url)) return true;
   return false;
+}
+
+export function isDashUrl(url: string): boolean {
+  return /\.mpd(?:[?#]|$)/i.test(url);
 }
 
 export function fmtTime(t: number): string {
@@ -188,6 +196,9 @@ export async function resolveEpisodeUrl(
   // Веб-плеер: страница источника в iframe, без вытаскивания HLS.
   // Токены d/s/ip не срезаем — без них Kodik отдаёт soft-404 «страницы не существует».
   const forceSourceIframe = typeof window !== 'undefined' && /[?&]webplayer=1/.test(window.location.search);
+  if (episodeUrl.startsWith('anix-stream:')) {
+    return { playUrl: episodeUrl, useVideo: true, qualityMap: {}, currentQuality: '', skip: null };
+  }
   const sourceUrl = episodeUrl.startsWith('http') ? episodeUrl : `https:${episodeUrl}`;
   if (forceSourceIframe) {
     return {

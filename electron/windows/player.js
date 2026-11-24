@@ -1,5 +1,7 @@
 'use strict';
 
+const { getCustomSources } = require('../lib/custom-sources-node');
+
 const path = require('path');
 const { BrowserWindow, ipcMain, shell, app } = require('electron');
 const state = require('../lib/app-state');
@@ -428,13 +430,15 @@ function installAnixartWebPlayerHeaders(ses, appReferer) {
     '*://kodik-cdn.com/*', '*://*.kodik-cdn.com/*',
     '*://kodik-storage.com/*', '*://*.kodik-storage.com/*',
     '*://solodcdn.com/*', '*://*.solodcdn.com/*',
+    'https://alloha.yani.tv/*',
   ];
   ses.webRequest.onBeforeSendHeaders({ urls }, (details, callback) => {
     const requestHeaders = { ...details.requestHeaders };
     let host = '';
     try { host = new URL(details.url).hostname; } catch (_) { /* ignore */ }
     const isWrapper = /anixmirai|anixart-app/i.test(host);
-    upsertHeader(requestHeaders, 'Referer', isWrapper ? ref : 'https://anixmirai.com/');
+    upsertHeader(requestHeaders, 'Referer',
+      host === 'alloha.yani.tv' ? 'https://yani.tv/' : isWrapper ? ref : 'https://anixmirai.com/');
     if (isWrapper) upsertHeader(requestHeaders, 'Origin', ref.replace(/\/$/, ''));
     upsertHeader(requestHeaders, 'User-Agent', BROWSER_UA);
     callback({ requestHeaders });
@@ -509,7 +513,8 @@ async function listSourceWebEpisodes(releaseId, dubberId, sourceId) {
   try {
     const { getAnixart } = require('../services/anix-client');
     const client = getAnixart();
-    const data = await client.endpoints.release.getEpisodes(
+    const data = await (await getCustomSources()).getEpisodes(
+      client.endpoints.release,
       Number(releaseId),
       Number(dubberId),
       Number(sourceId),
@@ -750,7 +755,8 @@ async function nodeDirectEmbedHint(releaseId, sourceId, ep) {
       token: token || undefined,
       backupFailover: false,
     });
-    const data = await client.endpoints.release.getEpisode(
+    const data = await (await getCustomSources()).getEpisode(
+      client.endpoints.release,
       Number(releaseId),
       Number(sourceId),
       Number(ep),
@@ -1137,8 +1143,10 @@ function focusPlayerWindow() {
 async function openPlayerWithParams(params) {
   if (!params || typeof params !== 'object') return;
   const applyRoomPlayback = !!params.applyRoomPlayback;
-  const sourceEmbedUrl = normalizeSourceEmbedUrl(params.sourceEmbedUrl);
-  const wantsSourceWeb = params.sourceWeb === true || params.webPlayer === true || !!sourceEmbedUrl;
+  const { isCustomSourceId } = await import('../lib/custom-sources.mjs');
+  const builtinOnly = isCustomSourceId(params.sourceId);
+  const sourceEmbedUrl = builtinOnly ? '' : normalizeSourceEmbedUrl(params.sourceEmbedUrl);
+  const wantsSourceWeb = !builtinOnly && (params.sourceWeb === true || params.webPlayer === true || !!sourceEmbedUrl);
   const safe = {
     releaseId: String(params.releaseId ?? ''),
     sourceId: String(params.sourceId ?? ''),

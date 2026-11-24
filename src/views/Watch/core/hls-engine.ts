@@ -1,8 +1,9 @@
 import Hls from 'hls.js';
-import { isHlsUrl } from '../_utils';
+import { isDashUrl, isHlsUrl } from '../_utils';
 import { buildHlsConfig } from './hls-media-context';
 
 type VideoWithHls = HTMLVideoElement & {
+  _dashCleanup?: () => void;
   _hls?: Hls;
   _hlsGen?: number;
   _hlsReady?: () => void;
@@ -14,7 +15,13 @@ type VideoWithHls = HTMLVideoElement & {
 
 export type HlsFatalKind = 'recover' | 'reresolve' | 'fallback';
 
+export type StreamQuality = {
+  heights: string[];
+  select: (quality: string) => boolean;
+};
+
 export interface SwapMediaHandlers {
+  onStreamQuality?: (quality: StreamQuality) => void;
   onReady?: () => void;
   onFatal?: (kind: HlsFatalKind) => void;
   /** Soft reconnect in progress (network backoff / stall kick). */
@@ -42,6 +49,8 @@ export function getAttachedHls(video: HTMLVideoElement): Hls | undefined {
 
 export function detachHls(video: HTMLVideoElement): void {
   const el = video as VideoWithHls;
+  el._dashCleanup?.();
+  el._dashCleanup = undefined;
   clearNetBackoffTimers(el);
   if (el._hls) {
     unbindHlsHandlers(el);
@@ -109,6 +118,22 @@ function bindHlsHandlers(hls: Hls, video: HTMLVideoElement, handlers: SwapMediaH
   const onReady = () => {
     if (el._hlsGen !== gen) return;
     handlers.onReconnect?.(false);
+    const byHeight = new Map<string, number>();
+    hls.levels.forEach((level, index) => {
+      if (level.height <= 0) return;
+      const key = String(level.height);
+      const previous = byHeight.get(key);
+      if (previous == null || hls.levels[previous].bitrate < level.bitrate) byHeight.set(key, index);
+    });
+    handlers.onStreamQuality?.({
+      heights: [...byHeight.keys()],
+      select(quality) {
+        const level = quality === 'auto' ? -1 : byHeight.get(quality);
+        if (level == null || el._hlsGen !== gen || el._hls !== hls) return false;
+        hls.nextLevel = level;
+        return true;
+      },
+    });
     handlers.onReady?.();
   };
 
@@ -245,7 +270,44 @@ export function swapMediaSource(
   video: HTMLVideoElement,
   url: string,
   handlers: SwapMediaHandlers = {},
-): { reused: boolean; isHls: boolean } {
+): { reused: boolean; isHls: boolean; isDash?: boolean } {
+  if (isDashUrl(url)) {
+    detachHls(video);
+    const el = video as VideoWithHls;
+    let player: { destroy(): void } | undefined;
+    const cleanup = () => player?.destroy();
+    el._dashCleanup = cleanup;
+    void import('dashjs').then(({ MediaPlayer }) => {
+      if (el._dashCleanup !== cleanup) return;
+      const dash = MediaPlayer().create();
+      player = dash;
+      dash.on(MediaPlayer.events.STREAM_INITIALIZED, () => {
+        const byHeight = new Map<string, ReturnType<typeof dash.getRepresentationsByType>[number]>();
+        for (const representation of dash.getRepresentationsByType('video')) {
+          if (representation.height <= 0) continue;
+          const key = String(representation.height);
+          if ((byHeight.get(key)?.bandwidth ?? -1) < representation.bandwidth) byHeight.set(key, representation);
+        }
+        handlers.onStreamQuality?.({
+          heights: [...byHeight.keys()],
+          select(quality) {
+            if (el._dashCleanup !== cleanup) return false;
+            const representation = byHeight.get(quality);
+            if (quality !== 'auto' && !representation) return false;
+            dash.updateSettings({ streaming: { abr: { autoSwitchBitrate: { video: quality === 'auto' } } } });
+            if (representation) dash.setRepresentationForTypeById('video', representation.id);
+            return true;
+          },
+        });
+        handlers.onReady?.();
+      });
+      dash.on(MediaPlayer.events.ERROR, () => handlers.onFatal?.('fallback'));
+      dash.initialize(video, url, false, handlers.startPosition);
+    }).catch(() => {
+      if (el._dashCleanup === cleanup) handlers.onFatal?.('fallback');
+    });
+    return { reused: false, isHls: false, isDash: true };
+  }
   // Android TV WebView: MSE/hls.js часто даёт чёрный кадр при живом currentTime.
   // Нативный HLS в <video src> — тот же путь, что у старого Anixholy APK.
   const wantHls = isHlsUrl(url) && Hls.isSupported() && !preferNativeHls();

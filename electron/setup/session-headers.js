@@ -186,6 +186,12 @@ function setupSessionRequestHeaders() {
       callback({ requestHeaders: details.requestHeaders });
       return;
     }
+    if (host === 'alloha.yani.tv' && details.resourceType === 'subFrame') {
+      const requestHeaders = { ...details.requestHeaders };
+      upsertHeader(requestHeaders, 'Referer', 'https://yani.tv/');
+      callback({ requestHeaders });
+      return;
+    }
     const current = !!(ctx?.host && (
       host === ctx.host || host.endsWith('.' + ctx.host) || ctx.host.endsWith('.' + host)
     ));

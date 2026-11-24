@@ -325,7 +325,7 @@ export interface AnixApi {
       sources?: Array<{ id: number; name: string; episode_count?: number; quality?: number }>;
     }>;
     getEpisodes: (releaseId: number, dubberId: number, sourceId: number, sort?: number) => Promise<{ episodes?: Array<{ position: number; name: string; url: string; iframe: boolean; is_watched?: boolean }> }>;
-    getEpisode: (releaseId: number, sourceId: number, episodePosition: number) => Promise<{ episode?: { position: number; name: string; url: string; iframe: boolean } }>;
+    getEpisode: (releaseId: number, sourceId: number, episodePosition: number) => Promise<{ episode?: { position: number; name: string; url: string; iframe: boolean; qualityMap?: Record<string, string>; currentQuality?: string } }>;
     getEpisodeUpdates: (releaseId: number, page?: number) => Promise<{
       content?: Array<{
         last_episode_update_date?: number;

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { isHlsUrl } from '../_utils';
+  import { isDashUrl, isHlsUrl } from '../_utils';
   import { detachHls, swapMediaSource } from '../core/hls-engine';
 
   interface Props {
@@ -95,9 +95,9 @@
       onready?.();
     }, 8000);
 
-    if (isHlsUrl(src)) {
+    if (isHlsUrl(src) || isDashUrl(src)) {
       const result = swapMediaSource(v, src, { forceNew: true, onReady: markReady });
-      if (!result.isHls) {
+      if (!result.isHls && !result.isDash) {
         const onCan = () => {
           v.removeEventListener('canplay', onCan);
           markReady();

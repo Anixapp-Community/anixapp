@@ -2,6 +2,7 @@
  * Общий мост к Anixart API для браузерного dev-режима (Vite middleware).
  * Повторяет IPC-каналы anix:* из electron/main.js без Electron.
  */
+const { getCustomSources } = require('./lib/custom-sources-node');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -709,10 +710,10 @@ function createAnixBridgeCore(options = {}) {
       if (id == null || cat == null) return { videos: [] };
       return c.getClient().endpoints.release.getVideoInCategory({ id, categoryId: cat, page });
     }),
-    'anix:getDubbers': h((c, releaseId) => {
+    'anix:getDubbers': h(async (c, releaseId) => {
       const id = toPositiveInt(releaseId);
       if (id == null) return { types: [] };
-      return c.getClient().endpoints.release.getDubbers(id);
+      return (await getCustomSources()).getDubbers(c.getClient().endpoints.release, id);
     }),
     'anix:typeAll': h((c) => c.getClient().endpoints.type.types()),
     'anix:typePin': h((c, releaseId, typeId) => {
@@ -727,25 +728,25 @@ function createAnixBridgeCore(options = {}) {
       if (id == null || type == null) return null;
       return c.getClient().endpoints.type.unpin(id, type);
     }),
-    'anix:getDubberSources': h((c, releaseId, dubberId) => {
+    'anix:getDubberSources': h(async (c, releaseId, dubberId) => {
       const id = toPositiveInt(releaseId);
       const dubId = toPositiveInt(dubberId);
       if (id == null || dubId == null) return { sources: [] };
-      return c.getClient().endpoints.release.getDubberSources(id, dubId);
+      return (await getCustomSources()).getDubberSources(c.getClient().endpoints.release, id, dubId);
     }),
-    'anix:getEpisodes': h((c, releaseId, dubberId, sourceId, sort = 1) => {
+    'anix:getEpisodes': h(async (c, releaseId, dubberId, sourceId, sort = 1) => {
       const id = toPositiveInt(releaseId);
       const dubId = toPositiveInt(dubberId);
       const srcId = toPositiveInt(sourceId);
       if (id == null || dubId == null || srcId == null) return { episodes: [] };
-      return c.getClient().endpoints.release.getEpisodes(id, dubId, srcId, sort);
+      return (await getCustomSources()).getEpisodes(c.getClient().endpoints.release, id, dubId, srcId, sort);
     }),
-    'anix:getEpisode': h((c, releaseId, sourceId, episodePosition) => {
+    'anix:getEpisode': h(async (c, releaseId, sourceId, episodePosition) => {
       const id = toPositiveInt(releaseId);
       const srcId = toPositiveInt(sourceId);
       const ep = toNonNegativeInt(episodePosition);
       if (id == null || srcId == null || ep == null) return { episode: null };
-      return c.getClient().endpoints.release.getEpisode(id, srcId, ep);
+      return (await getCustomSources()).getEpisode(c.getClient().endpoints.release, id, srcId, ep);
     }),
     'anix:getEpisodeUpdates': h((c, releaseId, page = 0) => {
       const id = toPositiveInt(releaseId);

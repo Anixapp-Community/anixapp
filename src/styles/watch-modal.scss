@@ -580,6 +580,31 @@
   }
 }
 
+.watch-modal__source-pills--standalone {
+  flex-shrink: 0;
+  margin: 0.4rem 0;
+}
+
+.watch-modal__variant-source-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+
+  > span {
+    padding: 0.08rem 0.3rem;
+    border-radius: 0.3rem;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+    color: $color-text-muted;
+    font-size: 0.68rem;
+    white-space: nowrap;
+  }
+
+  > .watch-modal__variant-source-count--extra {
+    color: var(--accent, #e45555);
+  }
+}
+
 .watch-modal__source-pill {
   flex: 0 0 auto;
   padding: 0.42rem 0.78rem;

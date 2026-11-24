@@ -84,6 +84,7 @@ const electronDir = __dirname;
 
 const { registerCdnScheme, setupCdnProtocol } = require('./cdn-proxy');
 const { registerLocalMediaScheme, setupLocalMediaProtocol } = require('./lib/local-media-protocol');
+const { registerSourceStreamScheme, setupSourceStreamProtocol } = require('./lib/source-stream-protocol');
 const {
   registerNotificationSoundScheme,
   setupNotificationSoundProtocol,
@@ -116,6 +117,7 @@ const { startFetchAAppBridge, stopFetchAAppBridge } = require('./lib/fetchaapp-b
 
 registerCdnScheme();
 registerLocalMediaScheme();
+registerSourceStreamScheme();
 registerNotificationSoundScheme();
 applyGpuFlags();
 
@@ -192,6 +194,7 @@ app.whenReady().then(() => {
   setupSessionRequestHeaders();
   setupCdnProtocol(logger);
   setupLocalMediaProtocol(() => media.getLibraryRoots?.() || media.getDownloadDirectory?.() || '', logger);
+  setupSourceStreamProtocol();
   setupNotificationSoundProtocol(electronDir, logger);
   if (media.getDownloadDirectory) media.getDownloadDirectory();
 

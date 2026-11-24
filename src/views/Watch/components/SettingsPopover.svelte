@@ -79,13 +79,15 @@
 
   const sortedQualities = $derived.by(() => {
     return Object.keys(availableQualities).sort((a, b) => {
+      if (a === 'auto') return -1;
+      if (b === 'auto') return 1;
       const numA = parseInt(a, 10) || 0;
       const numB = parseInt(b, 10) || 0;
       return numB - numA;
     });
   });
 
-  const hasQualities = $derived(sortedQualities.length > 1);
+  const hasQualities = $derived(sortedQualities.length > 0);
   const rate = $derived(clampPlaybackRate(playbackRate));
 
   const items = $derived.by((): UiV2PopupMenuItem[] => {
@@ -94,11 +96,11 @@
     if (hasQualities) {
       next.push({
         id: 'quality',
-        label: currentQuality ? `Качество · ${currentQuality}p` : 'Качество',
+        label: currentQuality === 'auto' ? 'Качество · Авто' : currentQuality ? `Качество · ${currentQuality}p` : 'Качество',
         icon: iconSettings(18),
         children: sortedQualities.map((q) => ({
           id: `quality:${q}`,
-          label: `${q}p`,
+          label: q === 'auto' ? 'Авто' : `${q}p`,
           type: 'radio' as const,
           checked: currentQuality === q,
           keepOpen: true,

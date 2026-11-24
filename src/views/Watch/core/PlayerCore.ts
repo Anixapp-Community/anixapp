@@ -1,7 +1,7 @@
 import { notifyHistoryChanged } from '../../../utils/favorites-events';
 import { isLocalMediaUrl } from '../../../utils/local-media-url';
 import { isHlsUrl } from '../_utils';
-import { bufferAheadAtPlayhead, detachHls, startHlsFromTime, swapMediaSource } from './hls-engine';
+import { bufferAheadAtPlayhead, detachHls, startHlsFromTime, swapMediaSource, type StreamQuality } from './hls-engine';
 import { prefetchEpisodeUrl, resolveEpisodeUrlCached, invalidateEpisodeUrlCache, type ResolvedEpisodeMedia } from './url-cache';
 import { UpscaleController, isGpuAvailable } from './upscale';
 import { SurroundController } from './surround-audio';
@@ -22,6 +22,7 @@ export type PlayerCorePlayOpts = {
   onWatchdogReresolve: () => Promise<{ url: string; useVideo: boolean } | null>;
   /** Soft mid-watch reconnect (HLS backoff / stall). */
   onReconnect?: (active: boolean) => void;
+  onStreamQuality?: (quality: StreamQuality) => void;
   syncPlaybackRate: () => void;
   releaseId?: string;
   sourceId?: string;
@@ -140,7 +141,10 @@ export class PlayerCore {
       opts.onReresolve(savedTime, wasPaused);
     };
 
-    const { isHls } = swapMediaSource(video, opts.url, {
+    const { isHls, isDash } = swapMediaSource(video, opts.url, {
+      onStreamQuality: (quality) => {
+        if (myGen === this.wdGen) opts.onStreamQuality?.(quality);
+      },
       forceNew: true,
       // Load from resume time — avoid fetching seg-1 then seeking (OP/black flash).
       startPosition: opts.seekTime,
@@ -216,7 +220,7 @@ export class PlayerCore {
     }, STALL_TICK_MS);
 
     // Progressive: long waiting/stalled → soft reconnect then reresolve
-    if (!isHls && !isLocal) {
+    if (!isHls && !isDash && !isLocal) {
       const clearWait = () => {
         if (this.progressiveWaitTimer) {
           clearTimeout(this.progressiveWaitTimer);
@@ -266,7 +270,7 @@ export class PlayerCore {
       }
       hardErrors += 1;
       const ct = !isNaN(video.currentTime) ? video.currentTime : 0;
-      if (hardErrors === 1 && !isHls) {
+      if (hardErrors === 1 && !isHls && !isDash) {
         // Quiet soft reload.
         this.kickProgressiveReload(video, opts.url, ct);
         return;
@@ -285,7 +289,7 @@ export class PlayerCore {
       }
     }, { once: true, signal });
 
-    if (!isHls) {
+    if (!isHls && !isDash) {
       opts.syncPlaybackRate();
       doPlay();
     }

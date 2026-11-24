@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
+  import { isCustomSourceId } from '../../../electron/lib/custom-sources.mjs';
   import { getWatchParams } from '../../router';
   import { getCurrentRoomId, sendLobbyChat, isLobbyAwaitingPlayerSync, notifyFluoPlayerSynced, canLobbyLocalCommand } from '../../services/lobby-state';
   import { logLobbyAction, snapshotPlayback } from '../../services/lobby-action-log';
@@ -30,7 +31,7 @@
   import { LobbyState }  from './_useLobby.svelte';
   import { PlayerCore } from './core/PlayerCore';
   import { initWebGpuAvailability, isGpuAvailable } from '../../utils/webgpu-availability.svelte';
-  import { swapMediaSource } from './core/hls-engine';
+  import { swapMediaSource, type StreamQuality } from './core/hls-engine';
   import {
     anime4kTargetHeight,
     mapAnime4kPreset,
@@ -196,7 +197,7 @@
       try {
         const list = await api.getEpisodes(rId, dubberId, sourceId);
         const eps = ((list?.episodes ?? []) as Array<{ position: number; name?: string; url?: string }>)
-          .filter((e) => !!e.url);
+          .filter((e) => !!e.url || isCustomSourceId(sourceId));
         if (eps.length > 0) {
           if (wantName) {
             const byName = eps.find((e) => (e.name?.trim() ?? '') === wantName);
@@ -286,6 +287,7 @@
   let adaptiveQualityByWindow = $state(false);
   /** Manual quality pick from UI — skip auto until next episode / setting toggle. */
   let qualityManualLock = $state(false);
+  let streamQuality = $state<StreamQuality | null>(null);
   let adaptiveQualityTimer: ReturnType<typeof setTimeout> | null = null;
 
   function showOsd(text: string, opts?: { warn?: boolean }) {
@@ -1902,6 +1904,7 @@
     seekTime?: number, initialPaused?: boolean,
     resolveError?: string | null,
   ) {
+    streamQuality = null;
     watchState.ep = ep; watchState.title = titleStr;
     watchState.sourceName = srcName; watchState.dubberId = dubId;
 
@@ -1912,7 +1915,7 @@
       window.history.replaceState(null, '', `${window.location.pathname}?${qs}`);
     }
 
-    if (!useVid && !allowsIframeFallback(core.origEpUrl || pUrl)) {
+    if (!useVid && (isCustomSourceId(watchState.sourceId) || !allowsIframeFallback(core.origEpUrl || pUrl))) {
       showPlayerError(core.origEpUrl || pUrl, userPlaybackError(core.origEpUrl || pUrl, resolveError));
       return;
     }
@@ -1949,6 +1952,12 @@
       sourceId: watchState.sourceId,
       syncPlaybackRate: syncVideoPlaybackRate,
       onReconnect: setPlayerReconnecting,
+      onStreamQuality: (quality) => {
+        if (isCustomSourceId(watchState.sourceId) && quality.heights.length && Object.keys(player.availableQualities).length <= 1) {
+          streamQuality = quality;
+          player.currentQuality = 'auto';
+        }
+      },
       onFallback: () => {
         player.switching = false;
         player.reconnecting = false;
@@ -1975,7 +1984,7 @@
             return;
           }
         }
-        if (core.origEpUrl && allowsIframeFallback(core.origEpUrl)) {
+        if (!isCustomSourceId(watchState.sourceId) && core.origEpUrl && allowsIframeFallback(core.origEpUrl)) {
           applyVideoAndUI(core.origEpUrl, false, ep, titleStr, srcName, dubId);
           return;
         }
@@ -2030,14 +2039,18 @@
 
   async function resolvePlaybackSource(
     rId: number, sId: number, ep: number, dubId: string | number | null,
-    episode: { url: string; iframe?: boolean }, isCurrent: () => boolean,
+    episode: { url: string; iframe?: boolean; qualityMap?: Record<string, string>; currentQuality?: string }, isCurrent: () => boolean,
   ) {
-    const media = await core.resolve(episode.url, !!episode.iframe);
+    const explicitWebPlayer = new URLSearchParams(location.search).get('webplayer') === '1';
+    const url = episode.url;
+    const resolved = await core.resolve(url, !!episode.iframe);
+    const media = episode.qualityMap && resolved.useVideo
+      ? { ...resolved, qualityMap: episode.qualityMap, currentQuality: episode.currentQuality ?? '' }
+      : resolved;
     const api = window.anixApi?.release;
     const dubber = positiveId(dubId);
-    const explicitWebPlayer = new URLSearchParams(location.search).get('webplayer') === '1';
-    const original = { media, url: episode.url, source: null };
-    if (media.useVideo || !isCurrent() || explicitWebPlayer || inLobbyRoom() || dubber == null
+    const original = { media, url, source: null };
+    if (media.useVideo || isCustomSourceId(sId) || !isCurrent() || explicitWebPlayer || inLobbyRoom() || dubber == null
       || !api?.getDubberSources || !api.getEpisode) return original;
 
     try {
@@ -2099,13 +2112,12 @@
         showPlayerError('', 'Нет ссылки на видео');
         return;
       }
-      setOrigEpisodeUrl(episode.url);
       const selection = await resolvePlaybackSource(rId, sId, ep, dubId, episode, () => myGen === episodeLoadGen);
       if (myGen !== episodeLoadGen) return;
+      setOrigEpisodeUrl(selection.url);
       if (selection.source) {
         watchState.sourceId = String(selection.source.id);
         srcName = selection.source.name;
-        setOrigEpisodeUrl(selection.url);
         void fetchEpisodesSilently();
       }
       const { playUrl: pUrl, useVideo: uv, qualityMap, currentQuality: cq, skip, error: resolveError } = selection.media;
@@ -3029,6 +3041,13 @@
 
   /** Switch quality — reuse HLS instance, keep the current frame. */
   async function changeQuality(quality: string, opts?: { fromAdaptive?: boolean; osd?: boolean }) {
+    if (streamQuality) {
+      if (quality !== player.currentQuality && streamQuality.select(quality)) {
+        player.currentQuality = quality;
+        qualityManualLock = quality !== 'auto';
+      }
+      return;
+    }
     const src = player.availableQualities[quality];
     if (!src || quality === player.currentQuality) return;
 
@@ -4061,7 +4080,7 @@
       const isCurrent = () => initialLoadGen === episodeLoadGen;
       try {
         let ep = episodeIndex(watchState.ep) ?? 1;
-        let episode: { url: string; iframe?: boolean } | null = null;
+        let episode: { url: string; iframe?: boolean; qualityMap?: Record<string, string>; currentQuality?: string } | null = null;
 
         const direct = await (window as any).anixApi.release.getEpisode(rId, sId, ep);
         if (direct?.episode?.url) {
@@ -4711,7 +4730,9 @@
     surroundMode: player.surroundMode,
     eqGains: player.eqGains,
     eqLevel: player.eqLevel,
-    availableQualities: player.availableQualities,
+    availableQualities: streamQuality
+      ? Object.fromEntries(['auto', ...streamQuality.heights].map((quality) => [quality, '']))
+      : player.availableQualities,
     currentQuality: player.currentQuality,
     speedLocked: inLobby,
     lastEpisodeTypeUpdateId,

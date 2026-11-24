@@ -62,6 +62,7 @@
   } from '../utils/episode-display';
   import { formatDubberQuality, isDubberNovelty, readLastEpisodeTypeUpdateId, sortDubbersPinnedFirst } from '../utils/dubber-meta';
   import { listPlayableDubberSources, NO_EPISODE_PICK_OTHER_DUB } from '../utils/dubber-sources';
+  import { isCustomSourceId } from '../../electron/lib/custom-sources.mjs';
   import { isTvMode } from '../platform/tv';
   import { releaseMedia, watchReleaseMedia } from '../services/release-media';
   import { fetchWatchProgress, isResumable, type WatchProgress } from '../services/watch-progress';
@@ -95,6 +96,7 @@
     is_sub?: boolean;
     isSub?: boolean;
     pinned?: boolean;
+    is_external?: boolean;
     quality?: number;
     [key: string]: unknown;
   }
@@ -143,6 +145,37 @@
   let sourcesLoading = $state(true);
   let sourcesError = $state('');
   let dubbers = $state<Dubber[]>([]);
+  let sourceCounts = $state<Record<number, Record<string, number>>>({});
+  let episodeRequest = 0;
+
+  function countSources(rows: Source[]) {
+    const counts: Record<string, number> = {};
+    for (const source of rows) {
+      const label = !isCustomSourceId(source.id) ? 'Anixart'
+        : source.name.includes('(YummyAnime)') ? 'YummyAnime' : 'AniType';
+      counts[label] = (counts[label] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  $effect(() => {
+    const id = releaseId;
+    const rows = dubbers.map((d) => d.id);
+    let active = true;
+    sourceCounts = {};
+    let index = 0;
+    async function loadCounts() {
+      while (active && index < rows.length) {
+        const dubberId = rows[index++];
+        try {
+          const result = await listPlayableDubberSources(id, dubberId);
+          if (active) sourceCounts[dubberId] = countSources(result);
+        } catch { /* A failed request does not hide the translation. */ }
+      }
+    }
+    if (id) for (let worker = 0; worker < Math.min(4, rows.length); worker++) void loadCounts();
+    return () => { active = false; };
+  });
   let updates = $state<EpisodeUpdate[]>([]);
   let updatesLoading = $state(false);
   let updatesLoadingMore = $state(false);
@@ -339,7 +372,7 @@
     e?.stopPropagation();
     e?.preventDefault();
     const api = window.anixApi?.type;
-    if (!api?.pin || !api?.unpin || pinningId != null) return;
+    if (d.is_external || !api?.pin || !api?.unpin || pinningId != null) return;
     const nextPinned = !d.pinned;
     pinningId = d.id;
     try {
@@ -717,6 +750,7 @@
   }
 
   async function openDubber(dubber: Dubber, preferredSourceId?: number, focusEpisode?: number) {
+    const request = ++episodeRequest;
     modalView = 'episodes';
     selectedDubber = dubber;
     sources = [];
@@ -736,6 +770,7 @@
 
     try {
       const srcs = await listPlayableDubberSources(releaseId, dubber.id);
+      if (request !== episodeRequest || modalView !== 'episodes') return;
       sources = srcs;
       if (srcs.length === 0) {
         episodesLoading = false;
@@ -750,11 +785,13 @@
         // «Продолжить» передаёт сырой объект из ответа API, а $state хранит прокси.
         // Ссылки не равны, хотя это та же озвучка — тогда список серий так и не запрашивается.
         if (selectedDubber?.id !== dubber.id) return;
-        if (await selectSource(src, false, focusEpisode)) break;
+        const nextRequest = episodeRequest + 1;
+        if (await selectSource(src, false, focusEpisode) || episodeRequest !== nextRequest) break;
       }
       await tick();
       focusTvModalContent();
     } catch {
+      if (request !== episodeRequest || modalView !== 'episodes') return;
       episodesLoading = false;
       episodesError = 'Ошибка загрузки источников';
     }
@@ -763,15 +800,19 @@
   /** true, если у источника есть серии. focusEpisode — серия по таймкоду, а не последняя с галочкой. */
   async function selectSource(source: Source, resetSearch = true, focusEpisode?: number): Promise<boolean> {
     if (!selectedDubber) return false;
+    const request = ++episodeRequest;
+    const dubberId = selectedDubber.id;
     selectedSourceId = source.id;
     selectedEpisodePos = null;
     if (resetSearch) searchInput = '';
     episodesLoading = true;
     episodesError = '';
+    episodes = [];
 
     try {
-      const res = await window.anixApi?.release?.getEpisodes(releaseId, selectedDubber.id, source.id);
-      episodes = (res?.episodes ?? []).filter((ep) => !!ep?.url);
+      const res = await window.anixApi?.release?.getEpisodes(releaseId, dubberId, source.id);
+      if (request !== episodeRequest || modalView !== 'episodes') return false;
+      episodes = (res?.episodes ?? []).filter((ep) => !!ep?.url || (isCustomSourceId(source.id) && Number.isFinite(ep?.position)));
       episodesLoading = false;
       if (episodes.length === 0) {
         episodesError = NO_EPISODE_PICK_OTHER_DUB;
@@ -787,6 +828,7 @@
       if (scrollPos != null) window.setTimeout(() => scrollToEpisode(scrollPos), 80);
       return true;
     } catch {
+      if (request !== episodeRequest || modalView !== 'episodes') return false;
       episodesLoading = false;
       episodesError = 'Ошибка загрузки серий';
       return false;
@@ -1207,6 +1249,20 @@
           </div>
         </div>
       {:else if modalView === 'episodes'}
+        {#if sources.length > 0}
+          <div class="watch-modal__source-pills watch-modal__source-pills--standalone" aria-label="Источники">
+            {#each sources as source (source.id)}
+              <button
+                type="button"
+                class="watch-modal__source-pill"
+                class:watch-modal__source-pill--active={source.id === selectedSourceId}
+                onclick={() => selectSource(source)}
+              >
+                {sourceLabel(source)}
+              </button>
+            {/each}
+          </div>
+        {/if}
         {#if episodesLoading && episodes.length === 0}
           <div class="watch-modal__loading watch-modal__loading--center">Загрузка серий…</div>
         {:else if episodesError}
@@ -1215,23 +1271,10 @@
           <Page noPadding extraClass="watch-modal__page page--scroll-area">
             <div class="watch-modal__episodes-view">
               <div class="watch-modal__episodes-bar">
-              {#if sources.length > 0}
-                <div class="watch-modal__source-pills" aria-label="Источники">
-                  {#each sources as source (source.id)}
-                    <button
-                      type="button"
-                      class="watch-modal__source-pill"
-                      class:watch-modal__source-pill--active={source.id === selectedSourceId}
-                      onclick={() => selectSource(source)}
-                    >
-                      {sourceLabel(source)}
-                    </button>
-                  {/each}
                   {#if !isTv}
                     <span class="watch-modal__desk-progress">{#if isMobile}{watchedCount} / {episodes.length}{:else}Просмотрено {watchedCount} из {episodes.length}{/if}</span>
                   {/if}
-                </div>
-              {/if}
+
 
               {#if isTv}
                 <div class="watch-modal__tv-actions">
@@ -1528,8 +1571,8 @@
                     role="button"
                     tabindex="0"
                     data-dubber-id={d.id}
-                    use:tvLongPress={isTv ? () => void togglePinDubber(d) : null}
-                    use:touchLongPress={isMobile ? () => void togglePinDubber(d) : null}
+                    use:tvLongPress={isTv && !d.is_external ? () => void togglePinDubber(d) : null}
+                    use:touchLongPress={isMobile && !d.is_external ? () => void togglePinDubber(d) : null}
                     data-tv-longpress-hint={pinLabel}
                     onclick={() => openDubber(d)}
                     onkeydown={(e) => {
@@ -1543,7 +1586,7 @@
                       {#if pinned}
                         <span class="watch-modal__variant-pinmark" aria-label="Закреплено">{@html iconPin(15)}</span>
                       {/if}
-                    {:else}
+                    {:else if !d.is_external}
                     <button
                       type="button"
                       class="watch-modal__variant-pin"
@@ -1578,6 +1621,13 @@
                           <span class="watch-modal__quality-badge">{qualityLabel}</span>
                         {/if}
                       </span>
+                      {#if sourceCounts[d.id]}
+                        <span class="watch-modal__variant-source-counts">
+                          {#each Object.entries(sourceCounts[d.id]) as [catalog, count] (catalog)}
+                            <span class:watch-modal__variant-source-count--extra={catalog !== 'Anixart'}>{catalog} · {count}</span>
+                          {/each}
+                        </span>
+                      {/if}
                     </span>
 
                     <span class="watch-modal__variant-views-badge">

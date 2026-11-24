@@ -300,11 +300,11 @@ async function fetchMediaResilient(url, method, headers) {
         return { res, finalUrl: finalUrl || cand, usedUrl: cand };
       }
       lastStatus = res.status;
-      await drain(res);
       if (!shouldFailoverStatus(res.status)) {
         // Hard 4xx (404 etc.) — no point cycling mirrors.
         return { res, finalUrl: finalUrl || cand, usedUrl: cand };
       }
+      await drain(res);
     } catch (err) {
       lastErr = err;
       // try next mirror
@@ -319,6 +319,14 @@ async function fetchMediaResilient(url, method, headers) {
   throw new Error('Upstream fetch failed');
 }
 
+function mediaRequestHeaders(url, refOverride) {
+  return {
+    'User-Agent': BROWSER_UA,
+    Referer: refererFor(url, refOverride),
+    Accept: '*/*',
+  };
+}
+
 async function proxyMediaRequest(req, res, targetUrl, refOverride, cookieOverride) {
   if (!isAllowedMediaUrl(targetUrl)) {
     res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8', ...corsHeaders() });
@@ -328,11 +336,7 @@ async function proxyMediaRequest(req, res, targetUrl, refOverride, cookieOverrid
 
   const preferred = toKodikHlsUrl(targetUrl);
   const cookie = cookieForUrl(preferred, cookieOverride);
-  const headers = {
-    'User-Agent': BROWSER_UA,
-    Referer: refererFor(preferred, refOverride),
-    Accept: '*/*',
-  };
+  const headers = mediaRequestHeaders(preferred, refOverride);
   if (cookie) headers.Cookie = cookie;
   if (req.headers.range) headers.Range = req.headers.range;
 
@@ -357,7 +361,7 @@ async function proxyMediaRequest(req, res, targetUrl, refOverride, cookieOverrid
 
   const ct = upstream.headers.get('content-type') || '';
 
-  if (isPlaylistUrl(finalUrl, ct) && req.method !== 'HEAD') {
+  if (upstream.ok && isPlaylistUrl(finalUrl, ct) && req.method !== 'HEAD') {
     let text = await upstream.text();
     if (stickySolodHost) {
       text = pinSolodHostsInPlaylist(text, stickySolodHost);
@@ -418,12 +422,21 @@ async function proxyMediaRequest(req, res, targetUrl, refOverride, cookieOverrid
   nodeStream.pipe(res);
 }
 
+function fetchMediaProbe(url, options) {
+  if (!isAllowedMediaUrl(url)) throw new Error('Media probe host not allowed');
+  return fetch(url, {
+    ...options,
+    headers: { ...mediaRequestHeaders(url), ...options.headers },
+  });
+}
+
 module.exports = {
   hostAllowed,
   isAllowedMediaUrl,
   proxyPath,
   rewriteM3u8,
   proxyMediaRequest,
+  fetchMediaProbe,
   corsHeaders,
   EXTRA_MEDIA_HOSTS,
   solodMirrorCandidates,
