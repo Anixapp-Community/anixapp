@@ -1135,8 +1135,10 @@
       <Popular />
     {:else if path === '/schedule'}
       <Overview />
-    {:else if path === '/collections' || path === '/collections/my'}
-      <CollectionsList week={collectionsWeek} mine={path === '/collections/my'} />
+    {:else if path === '/collections/my'}
+      <CollectionsList mine />
+    {:else if path === '/collections'}
+      <CollectionsList week={collectionsWeek} />
     {:else if path === '/catalog'}
       <Catalog />
     {:else if path === '/bookmarks'}

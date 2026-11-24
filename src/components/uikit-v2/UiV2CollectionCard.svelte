@@ -21,7 +21,12 @@
     image?: string | null;
     releaseCount?: number | null;
     notesCount?: number | null;
+    commentCount?: number | null;
     favoritesCount?: number | null;
+    /** Просмотрено релизов коллекции — «Совпадение N%» */
+    watchedCount?: number | null;
+    creatorLogin?: string | null;
+    creatorAvatar?: string | null;
     isFavorite?: boolean;
     isPrivate?: boolean;
   };
@@ -32,6 +37,10 @@
     /** Показывать ⋯ / ПКМ. По умолчанию да. */
     showMenu?: boolean;
     menuItems?: UiV2PopupMenuItem[];
+    /** `overlay` — подпись поверх обложки (по умолчанию); `poster` — обложка сверху, подпись снизу (хаб коллекций) */
+    layout?: 'overlay' | 'poster';
+    /** Для `poster`: широкая карточка карусели/сетки или компактная карточка «Созданные вами» */
+    variant?: 'wide' | 'small';
     onclick?: (data: UiV2CollectionCardData) => void;
     onMore?: (e: MouseEvent) => void;
     onMenuSelect?: (id: string) => void;
@@ -45,6 +54,8 @@
     moreLabel = 'Ещё',
     showMenu = true,
     menuItems,
+    layout = 'poster',
+    variant = 'wide',
     onclick,
     onMore,
     onMenuSelect,
@@ -115,6 +126,9 @@
   });
   const showImage = $derived(!!displayImageUrl && !imageFailed);
 
+  const isPoster = $derived(layout === 'poster');
+  const isCompact = $derived(isPoster && variant === 'small');
+
   const showFavoritesMeta = $derived(
     typeof data.favoritesCount === 'number' || localFavorite || localFavoritesCount > 0,
   );
@@ -125,11 +139,49 @@
       showFavoritesMeta,
   );
 
+  const commentCount = $derived(
+    typeof data.commentCount === 'number'
+      ? data.commentCount
+      : typeof data.notesCount === 'number'
+        ? data.notesCount
+        : null,
+  );
+
+  const hasCounters = $derived(localFavoritesCount > 0 || localFavorite || (commentCount ?? 0) > 0);
+
+  /** «Совпадение N%»: сколько релизов коллекции уже просмотрено (как в Anixart 11). */
+  const matchPercent = $derived.by((): number | null => {
+    const watched = typeof data.watchedCount === 'number' ? data.watchedCount : 0;
+    const total = typeof data.releaseCount === 'number' ? data.releaseCount : 0;
+    if (watched <= 0 || total <= 0) return null;
+    if (watched >= total) return 100;
+    return Math.min(99, Math.max(1, Math.round((watched * 100) / total)));
+  });
+
+  const hasCaptionCount = $derived(typeof data.releaseCount === 'number');
+  const hasCaptionMeta = $derived(
+    !isCompact
+      ? !!data.creatorLogin || matchPercent != null || hasCaptionCount
+      : hasCaptionCount,
+  );
+
   function formatCount(value: number): string {
     if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
     if (value >= 10_000) return `${Math.round(value / 1000)}K`;
     if (value >= 1_000) return `${(value / 1000).toFixed(1).replace(/\.0$/, '')}K`;
     return String(value);
+  }
+
+  /** Короткий счётчик как в приложении: «2,3 тыс.», «18 тыс.». */
+  function formatShort(value: number): string {
+    const n = Math.max(0, Math.floor(Number(value) || 0));
+    if (n < 1_000) return String(n);
+    const units = n < 1_000_000
+      ? { size: 1_000, suffix: ' тыс.' }
+      : { size: 1_000_000, suffix: ' млн' };
+    const scaled = n / units.size;
+    const text = scaled >= 10 ? String(Math.round(scaled)) : scaled.toFixed(1).replace(/\.0$/, '');
+    return `${text.replace('.', ',')}${units.suffix}`;
   }
 
   function releaseWord(n: number): string {
@@ -237,6 +289,8 @@
 <article
   class="uiv2-collection {className}"
   class:uiv2-collection--menu-open={menuOpen}
+  class:uiv2-collection--poster={isPoster}
+  class:uiv2-collection--small={isCompact}
   role={onclick ? 'button' : 'group'}
   tabindex={onclick ? 0 : undefined}
   aria-label={onclick ? data.title : undefined}
@@ -249,8 +303,8 @@
     <span class="uiv2-collection__sheet uiv2-collection__sheet--mid"></span>
   </div>
 
-  <div class="uiv2-collection__card">
-    <div class="uiv2-collection__media">
+  {#if isPoster}
+    <div class="uiv2-collection__media uiv2-collection__media--poster">
       {#if showImage}
         <img
           class="uiv2-collection__img"
@@ -263,13 +317,12 @@
       {:else}
         <span class="uiv2-collection__media-fallback" aria-hidden="true">{@html iconLayoutGrid(28)}</span>
       {/if}
-      <span class="uiv2-collection__veil" aria-hidden="true"></span>
 
       <div class="uiv2-collection__top">
         {#if data.isPrivate}
           <span class="uiv2-collection__glass" aria-label="Приватная коллекция">
             {@html iconLock(13)}
-            <span>Приватная</span>
+            {#if !isCompact}<span>Приватная</span>{/if}
           </span>
         {:else}
           <span class="uiv2-collection__top-spacer" aria-hidden="true"></span>
@@ -290,42 +343,130 @@
         {/if}
       </div>
 
-      <div class="uiv2-collection__cover-text">
-        <h3 class="uiv2-collection__title">{data.title}</h3>
-        {#if hasCoverMeta}
-          <p class="uiv2-collection__cover-meta">
-            {#if typeof data.releaseCount === 'number'}
-              <span class="uiv2-collection__meta-item">
-                <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconFilm(13)}</span>
-                <span class="uiv2-collection__meta-text">{data.releaseCount} {releaseWord(data.releaseCount)}</span>
-              </span>
-            {/if}
-            {#if typeof data.notesCount === 'number'}
-              {#if typeof data.releaseCount === 'number'}
-                <span class="uiv2-collection__meta-sep" aria-hidden="true">·</span>
+      {#if hasCounters}
+        <div class="uiv2-collection__counters">
+          {#if localFavoritesCount > 0 || localFavorite}
+            <span class="uiv2-collection__counter" class:uiv2-collection__counter--fav={localFavorite}>
+              <span class="uiv2-collection__counter-icon" aria-hidden="true">{@html iconFlag(13, localFavorite)}</span>
+              <span>{formatShort(localFavoritesCount)}</span>
+            </span>
+          {/if}
+          {#if (commentCount ?? 0) > 0}
+            <span class="uiv2-collection__counter">
+              <span class="uiv2-collection__counter-icon" aria-hidden="true">{@html iconMessageCircle(13)}</span>
+              <span>{formatShort(commentCount ?? 0)}</span>
+            </span>
+          {/if}
+        </div>
+      {/if}
+    </div>
+
+    <div class="uiv2-collection__caption">
+      <h3 class="uiv2-collection__caption-title">{data.title}</h3>
+      {#if hasCaptionMeta}
+        <p class="uiv2-collection__caption-meta">
+          {#if !isCompact && data.creatorLogin}
+            <span class="uiv2-collection__author">
+              {#if data.creatorAvatar}
+                <span
+                  class="uiv2-collection__author-avatar"
+                  style:background-image={`url('${data.creatorAvatar}')`}
+                  aria-hidden="true"
+                ></span>
               {/if}
-              <span class="uiv2-collection__meta-item">
-                <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconMessageCircle(13)}</span>
-                <span class="uiv2-collection__meta-text">{formatCount(data.notesCount)}</span>
-              </span>
+              <span class="uiv2-collection__author-login">{data.creatorLogin}</span>
+            </span>
+            {#if matchPercent != null || hasCaptionCount}
+              <span class="uiv2-collection__caption-dot" aria-hidden="true">·</span>
             {/if}
-            {#if showFavoritesMeta}
-              {#if typeof data.releaseCount === 'number' || typeof data.notesCount === 'number'}
-                <span class="uiv2-collection__meta-sep" aria-hidden="true">·</span>
-              {/if}
-              <span
-                class="uiv2-collection__meta-item"
-                class:uiv2-collection__meta-item--fav={localFavorite}
-              >
-                <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconFlag(13, localFavorite)}</span>
-                <span class="uiv2-collection__meta-text">{formatCount(localFavoritesCount)}</span>
-              </span>
-            {/if}
-          </p>
+          {/if}
+          {#if !isCompact && matchPercent != null}
+            <span class="uiv2-collection__match">Совпадение {matchPercent}%</span>
+          {:else if hasCaptionCount}
+            <span class="uiv2-collection__caption-count">{data.releaseCount} {releaseWord(data.releaseCount ?? 0)}</span>
+          {/if}
+        </p>
+      {/if}
+    </div>
+  {:else}
+    <div class="uiv2-collection__card">
+      <div class="uiv2-collection__media">
+        {#if showImage}
+          <img
+            class="uiv2-collection__img"
+            src={displayImageUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onerror={() => { imageFailed = true; }}
+          />
+        {:else}
+          <span class="uiv2-collection__media-fallback" aria-hidden="true">{@html iconLayoutGrid(28)}</span>
         {/if}
+        <span class="uiv2-collection__veil" aria-hidden="true"></span>
+
+        <div class="uiv2-collection__top">
+          {#if data.isPrivate}
+            <span class="uiv2-collection__glass" aria-label="Приватная коллекция">
+              {@html iconLock(13)}
+              <span>Приватная</span>
+            </span>
+          {:else}
+            <span class="uiv2-collection__top-spacer" aria-hidden="true"></span>
+          {/if}
+          {#if hasMenu}
+            <span class="uiv2-collection__more-slot">
+              <UiV2RoundButton
+                size="sm"
+                label={moreLabel}
+                class="uiv2-collection__more"
+                ariaHaspopup="menu"
+                ariaExpanded={menuOpen}
+                onclick={stopMore}
+              >
+                {@html iconMoreHorizontal(16)}
+              </UiV2RoundButton>
+            </span>
+          {/if}
+        </div>
+
+        <div class="uiv2-collection__cover-text">
+          <h3 class="uiv2-collection__title">{data.title}</h3>
+          {#if hasCoverMeta}
+            <p class="uiv2-collection__cover-meta">
+              {#if typeof data.releaseCount === 'number'}
+                <span class="uiv2-collection__meta-item">
+                  <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconFilm(13)}</span>
+                  <span class="uiv2-collection__meta-text">{data.releaseCount} {releaseWord(data.releaseCount)}</span>
+                </span>
+              {/if}
+              {#if typeof data.notesCount === 'number'}
+                {#if typeof data.releaseCount === 'number'}
+                  <span class="uiv2-collection__meta-sep" aria-hidden="true">·</span>
+                {/if}
+                <span class="uiv2-collection__meta-item">
+                  <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconMessageCircle(13)}</span>
+                  <span class="uiv2-collection__meta-text">{formatCount(data.notesCount)}</span>
+                </span>
+              {/if}
+              {#if showFavoritesMeta}
+                {#if typeof data.releaseCount === 'number' || typeof data.notesCount === 'number'}
+                  <span class="uiv2-collection__meta-sep" aria-hidden="true">·</span>
+                {/if}
+                <span
+                  class="uiv2-collection__meta-item"
+                  class:uiv2-collection__meta-item--fav={localFavorite}
+                >
+                  <span class="uiv2-collection__meta-icon" aria-hidden="true">{@html iconFlag(13, localFavorite)}</span>
+                  <span class="uiv2-collection__meta-text">{formatCount(localFavoritesCount)}</span>
+                </span>
+              {/if}
+            </p>
+          {/if}
+        </div>
       </div>
     </div>
-  </div>
+  {/if}
 </article>
 
 {#if hasMenu}

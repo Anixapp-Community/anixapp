@@ -239,6 +239,7 @@ function buildWebAnixApi(): AnixApi {
     collection: {
       info: (id) => invoke('anix:collectionById', id),
       all: (page = 0, options = {}) => invoke('anix:collectionsAll', page, options),
+      hub: () => invoke('anix:collectionHub'),
       profileCollections: (profileId, page = 0) =>
         invoke('anix:collectionProfileCollections', profileId, page),
       releaseCollections: (releaseId, page = 0, sort = 1) =>

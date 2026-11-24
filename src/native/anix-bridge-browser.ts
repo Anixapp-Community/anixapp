@@ -924,6 +924,7 @@ export function createBrowserAnixBridge() {
       if (typeof options?.previousPage === 'number') query.previous_page = options.previousPage;
       return c.getClient().endpoints.collection.collections(page, query);
     }),
+    'anix:collectionHub': h((c) => c.getClient().endpoints.collection.hub()),
     'anix:collectionProfileCollections': h((c, profileId, page = 0) =>
       c.getClient().endpoints.collection.profileCollections(profileId, page)),
     'anix:collectionReleaseCollections': h((c, releaseId, page = 0, sort = 1) =>

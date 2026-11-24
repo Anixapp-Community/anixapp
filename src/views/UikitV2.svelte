@@ -1997,7 +1997,7 @@
           <div class="uikit-v2-demo-block">
             <UiV2SectionHeader
               title="Коллекции"
-              subtitle="Обложка с названием и метаданными поверх"
+              subtitle="Обложка 16:9, счётчики закладок и комментариев, подпись снизу"
               onShowAll={() => showToast('Показать всё: коллекции')}
             />
             {#if cardsPending}
@@ -2006,7 +2006,7 @@
             <div class="uikit-v2-collections-grid">
               {#each collectionDemoItems as item (item.id)}
                 <UiV2CollectionCard
-                  data={item}
+                  data={{ ...item, creatorLogin: 'Maks1mio' }}
                   onclick={(c) => showToast(`Коллекция: ${c.title}`)}
                   onMenuSelect={(id) => showToast(`Коллекция «${id}»: ${item.title}`)}
                 />
@@ -2014,6 +2014,7 @@
             </div>
             {/if}
           </div>
+
         {:else if s.id === 'posts'}
           <div class="uikit-v2-demo-block">
             <h3 class="uikit-v2-demo-block__title">UiV2FeedPost</h3>

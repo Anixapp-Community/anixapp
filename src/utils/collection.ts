@@ -10,6 +10,29 @@ export const COLLECTION_SORT_OPTIONS = [
   { value: 6, label: 'Случайные' },
 ] as const;
 
+/**
+ * Сортировки хаба коллекций — как в меню Anixart 11 BETA 3.
+ * «Популярные за всё время» — это sort=1 (серверный «Лидеры рейтинга»), «Новые» — sort=5.
+ */
+export const COLLECTION_HUB_SORT_OPTIONS = [
+  { value: 3, label: 'Популярные за сезон' },
+  { value: 2, label: 'Популярные за год' },
+  { value: 1, label: 'Популярные за всё время' },
+  { value: 5, label: 'Новые' },
+  { value: 6, label: 'Случайные' },
+] as const;
+
+export const COLLECTION_HUB_DEFAULT_SORT = 3;
+
+export function defaultCollectionHubSort(): number {
+  return COLLECTION_HUB_DEFAULT_SORT;
+}
+
+export function collectionHubSortLabel(sort: number): string {
+  return COLLECTION_HUB_SORT_OPTIONS.find((o) => o.value === sort)?.label
+    ?? COLLECTION_HUB_SORT_OPTIONS[0].label;
+}
+
 export const COLLECTION_TITLE_MAX = 60;
 export const COLLECTION_DESCRIPTION_MAX = 5000;
 export const COLLECTION_RELEASES_MAX = 100;
@@ -74,6 +97,10 @@ export function resolveCollectionImage(raw: Record<string, unknown>): string | u
 export function mapCollectionCard(raw: Record<string, unknown>): CollectionCardData {
   const isDeleted = !!(raw.is_deleted ?? raw.delete ?? raw.isDeleted);
   const id = Number(raw.id ?? 0);
+  const creator = (raw.creator ?? null) as Record<string, unknown> | null;
+  const creatorLogin = [creator?.login, creator?.nickname, creator?.username, creator?.name]
+    .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  const creatorAvatar = creator && typeof creator.avatar === 'string' ? creator.avatar : '';
   return {
     id,
     title: String(raw.title ?? raw.name ?? 'Без названия'),
@@ -86,8 +113,14 @@ export function mapCollectionCard(raw: Record<string, unknown>): CollectionCardD
         : typeof raw.comment_count === 'number'
           ? raw.comment_count
           : undefined,
+    commentCount: typeof raw.comment_count === 'number' ? raw.comment_count : undefined,
     bookmarksCount: typeof raw.bookmarks_count === 'number' ? raw.bookmarks_count : undefined,
     favoritesCount: typeof raw.favorites_count === 'number' ? raw.favorites_count : undefined,
+    watchedCount: typeof raw.watched_count === 'number' ? raw.watched_count : undefined,
+    creatorLogin,
+    creatorAvatar: creatorAvatar
+      ? (resolveCdnAssetUrl(creatorAvatar) || buildPosterUrl(creatorAvatar) || undefined)
+      : undefined,
     isFavorite: !!(raw.is_favorite ?? raw.isFavorite),
     isPrivate: !!(raw.is_private ?? raw.isPrivate),
   };

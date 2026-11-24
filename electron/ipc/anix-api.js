@@ -907,6 +907,15 @@ loggedHandle('anix:collectionsAll', async (_, page = 0, options = {}) => {
   }
 });
 
+ipcMain.handle('anix:collectionHub', async () => {
+  try {
+    const client = getAnixart();
+    return await client.endpoints.collection.hub();
+  } catch (err) {
+    handleAnixError(err, 'collectionHub');
+  }
+});
+
 ipcMain.handle('anix:collectionProfileCollections', async (_, profileId, page = 0) => {
   try {
     const client = getAnixart();

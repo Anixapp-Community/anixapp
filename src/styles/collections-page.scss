@@ -11,65 +11,139 @@
   padding-bottom: 2rem;
 }
 
-// Капсула действий в стиле вкладок UiV2Tabs
-.collections-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.1rem;
-  min-height: 2.5rem;
-  padding: 0.25rem;
-  box-sizing: border-box;
-  border-radius: 999px;
-  background: var(--uiv2-tabs-capsule);
-  box-shadow: var(--uiv2-chrome-shadow);
+// ——— Хаб коллекций (как в Anixart 11): подборки недели, «созданные вами», «под ваш вкус» ———
+
+.collections-hub__section {
+  margin: 0 0 1.55rem;
 }
 
-.collections-header-actions__btn {
-  display: inline-flex;
+.collections-hub__section .uiv2-section-head,
+.collections-page--mine > .uiv2-section-head {
+  margin-bottom: 0.7rem;
+}
+
+// Стрелки карусели — в цветах темы: стандартная тёмная плашка в светлой теме прячет шеврон
+.collections-hub__section .release-page__carousel-arrow {
+  background: color-mix(in srgb, var(--uikit-v2-bg) 78%, transparent);
+  border: 1px solid var(--uiv2-border-subtle);
+  color: var(--uikit-v2-text);
+  box-shadow: 0 8px 22px color-mix(in srgb, #000 14%, transparent);
+  backdrop-filter: blur(12px);
+
+  &:hover {
+    background: var(--uiv2-surface-raised);
+    color: var(--uikit-v2-text);
+  }
+}
+
+.collections-hub__rail-item {
+  flex: 0 0 auto;
+  min-width: 0;
+  scroll-snap-align: start;
+
+  &--wide {
+    width: 18rem;
+  }
+}
+
+// В карусели подпись всегда занимает две строки — метаданные соседних карточек на одной линии
+.collections-hub__rail-item--wide .uiv2-collection__caption-title {
+  min-height: 2.6em;
+}
+
+.uiv2-collection--poster .collections-hub__create-tile.uiv2-collection__media--poster {
+  width: 100%;
+  color: var(--uikit-v2-text);
+  background: color-mix(in srgb, var(--uikit-v2-text) 6%, var(--uikit-v2-bg));
+  backdrop-filter: none;
+
+  &:hover {
+    background: color-mix(in srgb, var(--uikit-v2-text) 9%, var(--uikit-v2-bg));
+    border-color: color-mix(in srgb, var(--uikit-v2-text) 20%, transparent);
+  }
+}
+
+// Строка «N всего» + сортировка
+.collections-hub__toolbar {
+  display: flex;
   align-items: center;
-  gap: 0.3rem;
-  height: 2rem;
-  padding: 0 0.8rem;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.15rem 0 0.9rem;
+}
+
+.collections-hub__total {
   color: var(--uiv2-fg-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.collections-hub__sort {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2.1rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--uiv2-border-subtle);
+  border-radius: 999px;
+  background: var(--uiv2-surface-subtle);
+  color: var(--uiv2-fg-soft);
   font: inherit;
-  font-size: 0.88rem;
+  font-size: 0.8rem;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
   transition:
-    background 0.18s ease,
-    color 0.18s ease,
-    transform 0.18s ease;
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover {
+    background: var(--uiv2-surface-raised);
+    color: var(--uikit-v2-text);
+    border-color: var(--uiv2-border-strong);
+  }
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--uikit-v2-accent) 55%, transparent);
+    outline-offset: 2px;
+  }
+}
+
+.collections-hub__sort-icon,
+.collections-hub__sort-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  line-height: 0;
 
   svg {
     display: block;
   }
+}
 
-  &:hover {
-    color: var(--uiv2-fg-strong);
-  }
+.collections-hub__sort-chevron {
+  opacity: 0.7;
+}
 
-  &:active {
-    transform: scale(0.96);
-  }
+.collections-hub__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1.5rem 1rem;
+  align-items: start;
+}
 
-  &--create {
-    color: var(--uiv2-fg-strong);
+.collections-page--mine > .uiv2-section-head + .collections-hub__grid {
+  padding-top: 0.15rem;
+}
 
-    &:hover {
-      background: var(--uiv2-selected-bg);
-    }
-  }
-
-  // Как активная вкладка: режим «Мои» открыт
-  &--active {
-    background: color-mix(in srgb, var(--uikit-v2-text) 14%, transparent);
-    color: var(--uikit-v2-text);
-  }
+.collections-page--mine .collections-hub__grid {
+  column-gap: 0.85rem;
 }
 
 .collections-feed {

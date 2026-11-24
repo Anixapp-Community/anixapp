@@ -6203,41 +6203,20 @@ body.uiv2-scroll-dragging * {
 }
 
 .uiv2-collection-skeleton {
+  --uiv2-collection-radius: 18px;
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   padding-top: 0.6rem;
 
-  &__stack {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3rem;
-  }
-
-  &__sheet {
-    position: absolute;
-    inset: 0;
-    border-radius: 18px 18px 0 0 !important;
-
-    &--back {
-      transform: scaleX(0.86);
-    }
-
-    &--mid {
-      top: 0.3rem;
-      transform: scaleX(0.93);
-    }
-  }
-
   &__card {
     position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     flex: 1;
-    border-radius: 18px;
+    border-radius: var(--uiv2-collection-radius);
     overflow: hidden;
     border: 1px solid var(--uiv2-border-subtle);
     background: color-mix(in srgb, var(--uikit-v2-elevated) 60%, var(--uikit-v2-bg));
@@ -6268,6 +6247,36 @@ body.uiv2-scroll-dragging * {
   &__meta {
     width: 46%;
     height: 0.72rem;
+  }
+}
+
+.uiv2-collection-skeleton--poster {
+  --uiv2-collection-radius: 16px;
+
+  .uiv2-collection-skeleton__media--poster {
+    position: relative;
+    z-index: 1;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--uiv2-collection-radius) !important;
+    border: 1px solid var(--uiv2-border-subtle);
+    background-color: var(--uikit-v2-bg);
+  }
+
+  .uiv2-collection-skeleton__caption {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.55rem 0.15rem 0;
+  }
+
+  .uiv2-collection-skeleton__title {
+    width: 82%;
+    height: 0.85rem;
+  }
+
+  .uiv2-collection-skeleton__meta {
+    width: 52%;
+    height: 0.7rem;
   }
 }
 
@@ -7294,6 +7303,7 @@ button.uiv2-air-cal__day {
   background:
     radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--uikit-v2-accent) 22%, transparent), transparent 60%),
     linear-gradient(160deg, var(--uiv2-surface-raised), var(--uiv2-surface-subtle));
+  background-color: var(--uikit-v2-bg);
 }
 
 .uiv2-collection__veil {
@@ -7480,6 +7490,183 @@ button.uiv2-air-cal__day {
   opacity: 0.5;
   font-weight: 500;
   line-height: 1;
+}
+
+/* ——— V2 collection card: постер (хаб коллекций) ———
+   Обложка 16:9 со «стопкой» позади, счётчики стеклянной пилюлей на обложке,
+   подпись снизу: название, автор и «Совпадение N%» (или число релизов). */
+.uiv2-collection--poster {
+  --uiv2-collection-radius: 16px;
+}
+
+.uiv2-collection--poster .uiv2-collection__media--poster {
+  position: relative;
+  z-index: 1;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--uiv2-collection-radius);
+  overflow: hidden;
+  background: var(--uiv2-surface-raised);
+  border: 1px solid var(--uiv2-border-subtle);
+  box-shadow: 0 8px 22px color-mix(in srgb, #000 22%, transparent);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.25s ease;
+
+  .uiv2-collection[role='button']:hover & {
+    border-color: color-mix(in srgb, var(--uikit-v2-text) 16%, transparent);
+    box-shadow: 0 14px 32px color-mix(in srgb, #000 32%, transparent);
+  }
+}
+
+.uiv2-collection__counters {
+  position: absolute;
+  left: 0.5rem;
+  bottom: 0.5rem;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  height: 1.6rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  color: var(--uiv2-media-control-fg);
+  background: var(--uiv2-media-control-bg);
+  border: 1px solid var(--uiv2-media-control-border);
+  box-shadow: var(--uiv2-media-control-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.uiv2-collection__counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+
+  &--fav {
+    color: #f2c46d;
+
+    .uiv2-collection__counter-icon svg {
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+    }
+  }
+}
+
+.uiv2-collection__counter-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.85rem;
+  height: 0.85rem;
+  flex-shrink: 0;
+  line-height: 0;
+
+  svg {
+    display: block;
+    width: 0.8rem;
+    height: 0.8rem;
+  }
+}
+
+.uiv2-collection__caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.55rem 0.15rem 0;
+}
+
+.uiv2-collection__caption-title {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--uikit-v2-text, #{$color-text});
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.uiv2-collection--small .uiv2-collection__caption-title {
+  display: block;
+  overflow: hidden;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uiv2-collection__caption-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--uiv2-fg-muted, #{$color-text-muted});
+  font-size: 0.78rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.uiv2-collection__author {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.uiv2-collection__author-avatar {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+  border-radius: 50%;
+  background-color: var(--uiv2-surface-raised);
+  background-position: center;
+  background-size: cover;
+}
+
+.uiv2-collection__author-login {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uiv2-collection__caption-dot {
+  flex: none;
+  opacity: 0.55;
+}
+
+.uiv2-collection__match {
+  flex: none;
+  color: var(--color-success, #{$color-success});
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.uiv2-collection__caption-count {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uiv2-collection--small .uiv2-collection__glass span {
+  display: none;
+}
+
+.uiv2-collection--small .uiv2-collection__counters {
+  left: 0.4rem;
+  bottom: 0.4rem;
+  gap: 0.45rem;
+  height: 1.45rem;
+  padding: 0 0.45rem;
+  font-size: 0.7rem;
 }
 
 .uikit-v2-collections-grid {

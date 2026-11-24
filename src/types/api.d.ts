@@ -508,8 +508,16 @@ export interface AnixApi {
 
   collection: {
     info: (id: number) => Promise<any>;
-    all: (page?: number, options?: { sort?: number; where?: number; previousPage?: number }) => Promise<{ content?: unknown[]; last?: boolean; total_page_count?: number; current_page?: number }>;
-    profileCollections: (profileId: number, page?: number) => Promise<{ content?: unknown[]; last?: boolean }>;
+    all: (page?: number, options?: { sort?: number; where?: number; previousPage?: number }) => Promise<{ content?: unknown[]; last?: boolean; total_page_count?: number; current_page?: number; total_count?: number }>;
+    /** GET collection/hub (Anixart 11 BETA 3+) — подборки недели, «ваши» и «под ваш вкус» */
+    hub: () => Promise<{
+      code?: number;
+      weekly?: unknown[];
+      my?: unknown[];
+      recommended?: unknown[];
+      my_count?: number;
+    }>;
+    profileCollections: (profileId: number, page?: number) => Promise<{ content?: unknown[]; last?: boolean; total_count?: number }>;
     /** GET collection/all/release/{id}/{page}?sort= — коллекции с релизом */
     releaseCollections?: (releaseId: number, page?: number, sort?: number) => Promise<{ code?: number; content?: unknown[]; last?: boolean; total_count?: number; total_page_count?: number }>;
     favorites: (page?: number) => Promise<{ content?: unknown[]; total_count?: number }>;

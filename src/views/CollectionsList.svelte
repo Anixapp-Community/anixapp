@@ -1,44 +1,48 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack } from 'svelte';
   import CollectionCard from '../components/CollectionCard.svelte';
-  import { swipeTabs, type TabSwipeState } from '../actions/swipeTabs';
-  import { isMobileMode } from '../platform/mobile';
-  import TabPeek from '../components/TabPeek.svelte';
-  import { createTabPrefetch, tabNeighbors, TAB_PEEK_ITEMS } from '../utils/tab-prefetch.svelte';
+  import type { CollectionCardData } from '../components/CollectionCard.svelte';
   import UiV2CollectionCardSkeleton from '../components/uikit-v2/UiV2CollectionCardSkeleton.svelte';
-  import CollectionsHeaderActions from '../components/collections/CollectionsHeaderActions.svelte';
   import DiscoverHero from '../components/DiscoverHero.svelte';
-  import UiV2Tabs from '../components/uikit-v2/UiV2Tabs.svelte';
   import UiV2Button from '../components/uikit-v2/UiV2Button.svelte';
-  import { iconFolder, iconLayoutGrid, iconPlus } from '../components/icons';
+  import UiV2SectionHeader from '../components/uikit-v2/UiV2SectionHeader.svelte';
+  import UiV2ReleaseCarousel from '../components/uikit-v2/UiV2ReleaseCarousel.svelte';
+  import UiV2PopupMenu, { type UiV2PopupMenuItem } from '../components/uikit-v2/UiV2PopupMenu.svelte';
+  import UiV2PillField from '../components/uikit-v2/UiV2PillField.svelte';
+  import UiV2ContentRetryOverlay from '../components/uikit-v2/UiV2ContentRetryOverlay.svelte';
+  import {
+    iconArrowUpDown,
+    iconChevronDown,
+    iconLayoutGrid,
+    iconPlus,
+    iconSearch,
+    iconX,
+  } from '../components/icons';
   import { navigate } from '../stores/navigation';
-  import { requireAuth } from '../stores/auth';
+  import { isAuthenticated, requireAuth } from '../stores/auth';
   import { ensureProfileId } from '../utils/profile';
   import { resolveJacksonRefs } from '../utils/jackson-refs';
   import { buildPosterUrl } from '../utils/posterUrl';
   import { openProfilePanel } from '../stores/profile-panel';
   import { closeLocalSearch, localSearchLabel, localSearchQuery } from '../stores/mobile-local-search';
-  import UiV2PillField from '../components/uikit-v2/UiV2PillField.svelte';
-  import { iconSearch, iconX } from '../components/icons';
-  import UiV2ContentRetryOverlay from '../components/uikit-v2/UiV2ContentRetryOverlay.svelte';
+  import { isMobileMode } from '../platform/mobile';
   import { headlineFromLoadError } from '../utils/content-load-error';
   import {
-    COLLECTION_SORT_OPTIONS,
-    defaultCollectionListSort,
+    COLLECTION_HUB_SORT_OPTIONS,
+    collectionHubSortLabel,
+    defaultCollectionHubSort,
     initialCollectionListPage,
     initialCollectionPreviousPage,
     clearCollectionEditorDraft,
     mapCollectionCard,
   } from '../utils/collection';
-  import type { CollectionCardData } from '../components/CollectionCard.svelte';
   import {
     buildViewStateKey,
     getViewState,
-    saveViewStateWithScroll,
+    saveViewStateData,
     restoreScrollTop,
     resetScrollTop,
     registerActiveScrollKey,
-    saveViewStateData,
   } from '../stores/view-state';
 
   interface CollectionsViewState {
@@ -49,13 +53,14 @@
     loadState: 'loading' | 'error' | 'empty' | 'ready';
     errorMsg: string;
     selectedSort: number;
+    totalCount: number | null;
   }
 
   interface Props {
     week?: boolean;
-    /** Режим «Мои» (/collections/my) — та же страница, список коллекций профиля */
+    /** Режим «Мои» (/collections/my) — коллекции своего профиля */
     mine?: boolean;
-    /** Коллекции другого пользователя (/profile/:id/collections) — та же страница, что «Мои» */
+    /** Коллекции другого пользователя (/profile/:id/collections) */
     userId?: number | null;
   }
 
@@ -63,10 +68,12 @@
 
   /** Чужой профиль: шапка с аватаром и ником, без «Создать» */
   const foreign = $derived(userId != null && userId > 0);
+  type Mode = 'hub' | 'week' | 'mine' | 'foreign';
+  const mode = $derived<Mode>(week ? 'week' : foreign ? 'foreign' : mine ? 'mine' : 'hub');
+
   let ownerLogin = $state('');
   let ownerAvatar = $state('');
   let ownerTotal = $state<number | null>(null);
-
 
   let items = $state<CollectionCardData[]>([]);
   let page = $state(0);
@@ -75,50 +82,58 @@
   let isLoading = $state(false);
   let loadState = $state<'loading' | 'error' | 'empty' | 'ready'>('loading');
   let errorMsg = $state('');
-  let selectedSort = $state(defaultCollectionListSort());
+  let totalCount = $state<number | null>(null);
+  let selectedSort = $state(defaultCollectionHubSort());
   let profileId: number | null = null;
   /** Растёт при каждом сбросе списка — ответы устаревших запросов отбрасываются */
   let loadToken = 0;
-  /** Общий список, пока открыт режим «Мои» — возврат без перезагрузки */
-  let allSnapshot: CollectionsViewState | null = null;
-  let mounted = false;
-  let shownMine = false;
 
-  let wrapEl: HTMLElement | undefined = $state();
-  let scrollEl: HTMLElement | null = null;
-  let scrollListener: (() => void) | null = null;
-  let unregisterScrollKey: (() => void) | null = null;
+  // ——— Хаб: подборки недели, «созданные вами», «под ваш вкус» ———
+  let hubWeekly = $state<CollectionCardData[]>([]);
+  let hubMine = $state<CollectionCardData[]>([]);
+  let hubRecommended = $state<CollectionCardData[]>([]);
+  let hubState = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  let hubToken = 0;
+
+  let sortOpen = $state(false);
+  let sortBtn = $state<HTMLButtonElement | null>(null);
+
+  const sortItems = $derived<UiV2PopupMenuItem[]>(
+    COLLECTION_HUB_SORT_OPTIONS.map((o) => ({
+      id: String(o.value),
+      label: o.label,
+      type: 'radio',
+      checked: selectedSort === o.value,
+    })),
+  );
+
+  const isHub = $derived(mode === 'hub');
+  const showHubSections = $derived(isHub && $isAuthenticated);
+  const sortLabel = $derived(collectionHubSortLabel(selectedSort));
+
+  const listSort = $derived(week ? 4 : selectedSort);
+  const listWhere = $derived(week ? 2 : 1);
+
+  const pageTitle = $derived(week ? 'Коллекции недели' : 'Коллекции');
+  const pageSubtitle = $derived(
+    week
+      ? 'Лучшие подборки за неделю'
+      : foreign
+        ? (ownerTotal != null ? collectionsCountLabel(ownerTotal) : '')
+        : '',
+  );
+
+  const totalLabel = $derived(totalCount != null ? `${formatTotal(totalCount)} всего` : '');
+
+  const skeletonCount = $derived(mode === 'foreign' || mode === 'mine' ? 4 : 6);
 
   /** Поиск по коллекциям пользователя: у API его нет — фильтруем загруженное (и догружаем всё при вводе) */
   let deskQuery = $state('');
   const searchQuery = $derived((isMobileMode() ? $localSearchQuery : deskQuery).trim().toLowerCase());
   const visibleItems = $derived(
     foreign && searchQuery
-      ? items.filter((it) => {
-          return `${it.title ?? ''} ${it.description ?? ''}`.toLowerCase().includes(searchQuery);
-        })
+      ? items.filter((it) => `${it.title ?? ''} ${it.description ?? ''}`.toLowerCase().includes(searchQuery))
       : items,
-  );
-  $effect(() => {
-    if (!foreign) return;
-    localSearchLabel.set(ownerLogin ? `Поиск в коллекциях у ${ownerLogin}` : 'Поиск в коллекциях');
-  });
-  $effect(() => {
-    // Ищем по всем коллекциям, а не по первой странице
-    if (foreign && searchQuery && hasMore && !isLoading && loadState === 'ready') void untrack(() => loadPage());
-  });
-
-  const listSort = $derived(week ? 4 : selectedSort);
-  const listWhere = $derived(week ? 2 : 1);
-  const pageTitle = $derived(week ? 'Коллекции недели' : foreign ? 'Коллекции' : mine ? 'Мои коллекции' : 'Коллекции');
-  const pageSubtitle = $derived(
-    week
-      ? 'Лучшие подборки за неделю'
-      : foreign
-        ? (ownerTotal != null ? collectionsCountLabel(ownerTotal) : '')
-        : mine
-          ? 'Ваши подборки релизов'
-          : 'Пользовательские коллекции релизов',
   );
 
   function collectionsCountLabel(n: number): string {
@@ -127,7 +142,111 @@
     const word = m10 === 1 && m100 !== 11 ? 'коллекция'
       : m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20) ? 'коллекции'
         : 'коллекций';
-    return `${n} ${word}`;
+    return `${formatTotal(n)} ${word}`;
+  }
+
+  /** 2 462 — как в приложении: разряды через пробел */
+  function formatTotal(n: number): string {
+    return new Intl.NumberFormat('ru-RU').format(Math.max(0, Math.floor(n))).replace(/\u00a0/g, ' ');
+  }
+
+  let wrapEl: HTMLElement | undefined = $state();
+  let scrollEl: HTMLElement | null = null;
+  let scrollListener: (() => void) | null = null;
+  let unregisterScrollKey: (() => void) | null = null;
+
+  function viewKey(): string {
+    if (mode === 'foreign') return buildViewStateKey(`/profile/${userId}/collections`);
+    if (mode === 'mine') return buildViewStateKey('/collections/my');
+    return buildViewStateKey('/collections');
+  }
+
+  $effect(() => {
+    if (!foreign) return;
+    localSearchLabel.set(ownerLogin ? `Поиск в коллекциях у ${ownerLogin}` : 'Поиск в коллекциях');
+  });
+  $effect(() => {
+    // Ищем по всем коллекциям, а не по первой странице
+    if (foreign && searchQuery && hasMore && !isLoading && loadState === 'ready') {
+      void untrack(() => loadPage());
+    }
+  });
+
+  /** Хаб грузим один раз, когда известна авторизация */
+  $effect(() => {
+    if (mode !== 'hub' || !$isAuthenticated) return;
+    if (hubState !== 'idle') return;
+    untrack(() => void loadHub());
+  });
+
+  async function loadHub() {
+    if (hubState === 'loading' || hubState === 'ready') return;
+    hubState = 'loading';
+    const token = ++hubToken;
+    const api = window.anixApi;
+    if (!api) {
+      hubState = 'error';
+      return;
+    }
+    // Старый мост (до Anixart 11 BETA 3) канала не знает — собираем секции из доступных запросов
+    if (typeof api.collection?.hub !== 'function') {
+      await loadHubFallback();
+      if (token === hubToken) hubState = 'ready';
+      return;
+    }
+    try {
+      const data = await api.collection.hub();
+      if (token !== hubToken) return;
+      if (data?.code != null && data.code !== 0) {
+        await loadHubFallback();
+        if (token === hubToken) hubState = 'ready';
+        return;
+      }
+      const toCards = (list: unknown[] | undefined) =>
+        (list ?? []).map((raw) => mapCollectionCard(raw as Record<string, unknown>));
+      hubWeekly = toCards(data.weekly);
+      hubMine = toCards(data.my);
+      hubRecommended = toCards(data.recommended);
+      hubState = 'ready';
+    } catch {
+      if (token !== hubToken) return;
+      await loadHubFallback();
+      if (token === hubToken) hubState = 'ready';
+    }
+  }
+
+  /**
+   * Запасной путь для сборок, где GET collection/hub ещё нет:
+   * «Популярные за неделю» — discover/collectionsWeek, «Созданные вами» — коллекции профиля.
+   * «Под ваш вкус» строится только сервером, поэтому в этом режиме секции нет.
+   */
+  async function loadHubFallback() {
+    const api = window.anixApi;
+    if (!api) return;
+    const toCards = (list: unknown[] | undefined) =>
+      (list ?? []).map((raw) => mapCollectionCard(raw as Record<string, unknown>));
+    await Promise.all([
+      (async () => {
+        if (!api.discover?.collectionsWeek) return;
+        try {
+          const data = await api.discover.collectionsWeek(-1, 0);
+          hubWeekly = toCards(data?.content);
+        } catch {
+          /* секция просто не покажется */
+        }
+      })(),
+      (async () => {
+        if (!api.collection?.profileCollections) return;
+        try {
+          if (profileId == null) profileId = await ensureProfileId();
+          if (!profileId) return;
+          const data = await api.collection.profileCollections(profileId, 0);
+          hubMine = toCards(data?.content);
+        } catch {
+          /* секция просто не покажется */
+        }
+      })(),
+    ]);
   }
 
   async function loadOwner(id: number) {
@@ -141,13 +260,8 @@
     }
   }
 
-
-  const sortTabs = COLLECTION_SORT_OPTIONS.map((o) => ({ id: String(o.value), label: o.label }));
-
-  const COLLECTIONS_VIEW_KEY = () => buildViewStateKey('/collections');
-
   function snapshot(): CollectionsViewState {
-    return { items, page, previousPage, hasMore, loadState, errorMsg, selectedSort };
+    return { items, page, previousPage, hasMore, loadState, errorMsg, selectedSort, totalCount };
   }
 
   function applySnapshot(s: CollectionsViewState) {
@@ -158,89 +272,33 @@
     hasMore = s.hasMore;
     loadState = s.loadState;
     errorMsg = s.errorMsg;
+    totalCount = s.totalCount ?? null;
   }
 
   function resetList() {
     loadToken += 1;
     isLoading = false;
     items = [];
-    page = mine ? 0 : initialCollectionListPage(listSort);
+    page = mode === 'mine' || mode === 'foreign' ? 0 : initialCollectionListPage(listSort);
     previousPage = initialCollectionPreviousPage();
     hasMore = true;
     loadState = 'loading';
   }
 
   function onSortChange(sort: number) {
-    if (mine) {
-      // Из «Моих» вкладка сортировки возвращает к общему списку
-      if (allSnapshot && allSnapshot.selectedSort !== sort) allSnapshot = null;
-      selectedSort = sort;
-      navigate('/collections');
-      return;
-    }
     if (sort === selectedSort) return;
     selectedSort = sort;
     resetScrollTop();
-    const seed = isMobileMode() ? tabPrefetch.get(String(sort)) : undefined;
-    if (seed?.items.length) {
-      loadToken += 1;
-      isLoading = false;
-      applySnapshot(seed);
-      return;
-    }
     resetList();
     void loadPage();
   }
 
-  /** Первая страница соседних сортировок: при свайпе рядом едет уже настоящий список. */
-  const tabPrefetch = createTabPrefetch<CollectionsViewState>(async (id) => {
-    const sort = Number(id);
-    const requestPage = initialCollectionListPage(sort);
-    const data = (await window.anixApi!.collection.all(requestPage, {
-      sort,
-      where: 1,
-      previousPage: initialCollectionPreviousPage(),
-    })) as { content?: unknown[]; last?: boolean; total_page_count?: number; current_page?: number };
-    const content = (data?.content ?? []) as Record<string, unknown>[];
-    const currentPage = typeof data.current_page === 'number' ? data.current_page : requestPage;
-    return {
-      items: content.map(mapCollectionCard),
-      page: requestPage + 1,
-      previousPage: requestPage,
-      hasMore: data.last === true
-        ? false
-        : typeof data.total_page_count === 'number'
-          ? currentPage + 1 < data.total_page_count
-          : content.length >= 25,
-      loadState: content.length ? 'ready' : 'empty',
-      errorMsg: '',
-      selectedSort: sort,
-    };
-  });
-  const peekTabs = $derived(tabNeighbors(sortTabs.map((t) => t.id), String(selectedSort)));
-
-  $effect(() => {
-    if (!isMobileMode() || mine || week || loadState === 'loading') return;
-    const { prev, next } = peekTabs;
-    untrack(() => {
-      if (prev) tabPrefetch.ensure(prev);
-      if (next) tabPrefetch.ensure(next);
-    });
-  });
-
-  /** Ход свайпа содержимого — для планки и подписей вкладок */
-  let tabSwipe = $state<TabSwipeState>(null);
-
-  function swipeToTab(dir: 1 | -1): boolean {
-    const nextTab = sortTabs[sortTabs.findIndex((t) => t.id === String(selectedSort)) + dir];
-    if (!nextTab) return false;
-    onSortChange(Number(nextTab.id));
-    return true;
-  }
-
-  function toggleMine() {
-    if (!requireAuth()) return;
-    navigate(mine ? '/collections' : '/collections/my');
+  /** Повтор после ошибки: сбрасываем «конец списка», иначе loadPage сразу выйдет */
+  function retryLoad() {
+    if (isLoading) return;
+    hasMore = true;
+    loadState = 'loading';
+    void loadPage();
   }
 
   function createCollection() {
@@ -249,32 +307,10 @@
     navigate('/collections/create');
   }
 
-  /** Переключение «Все» ↔ «Мои» без пересоздания страницы */
-  function switchMode(nextMine: boolean) {
-    if (nextMine === shownMine) return;
-    shownMine = nextMine;
-    if (nextMine) {
-      if (items.length > 0) allSnapshot = snapshot();
-      resetList();
-      void loadPage();
-      return;
-    }
-    const restore = allSnapshot;
-    allSnapshot = null;
-    if (restore && restore.items.length > 0) {
-      loadToken += 1;
-      isLoading = false;
-      applySnapshot(restore);
-      return;
-    }
-    resetList();
-    void loadPage();
+  function showAllMine() {
+    if (!requireAuth()) return;
+    navigate('/collections/my');
   }
-
-  $effect(() => {
-    const nextMine = mine;
-    if (mounted) untrack(() => switchMode(nextMine));
-  });
 
   async function loadMinePage(token: number) {
     if (!window.anixApi?.collection?.profileCollections) return;
@@ -293,7 +329,10 @@
       total_count?: number;
     };
     if (token !== loadToken) return;
-    if (nextPage === 0 && typeof data?.total_count === 'number') ownerTotal = data.total_count;
+    if (nextPage === 0 && typeof data?.total_count === 'number') {
+      ownerTotal = data.total_count;
+      totalCount = data.total_count;
+    }
     const content = (data?.content ?? []) as Record<string, unknown>[];
     if (!content.length) {
       hasMore = false;
@@ -309,7 +348,7 @@
 
   async function loadPage() {
     if (isLoading || !hasMore) return;
-    if (mine) {
+    if (mode === 'mine' || mode === 'foreign') {
       const token = loadToken;
       isLoading = true;
       try {
@@ -329,7 +368,12 @@
     const token = loadToken;
     isLoading = true;
     const nextPage = page;
-    if (nextPage === initialCollectionListPage(listSort) && previousPage === initialCollectionPreviousPage() && items.length === 0 && loadState !== 'error') {
+    if (
+      nextPage === initialCollectionListPage(listSort)
+      && previousPage === initialCollectionPreviousPage()
+      && items.length === 0
+      && loadState !== 'error'
+    ) {
       loadState = 'loading';
     }
 
@@ -345,6 +389,7 @@
         last?: boolean;
         total_page_count?: number;
         current_page?: number;
+        total_count?: number;
         code?: number;
       };
       if (token !== loadToken) return;
@@ -357,6 +402,7 @@
         }
         return;
       }
+      if (typeof data.total_count === 'number') totalCount = data.total_count;
       if (!content.length) {
         hasMore = false;
         if (items.length === 0) loadState = 'empty';
@@ -408,30 +454,13 @@
   }
 
   onMount(() => {
-    mounted = true;
-    shownMine = mine;
-    unregisterScrollKey = registerActiveScrollKey(() => buildViewStateKey(
-      foreign ? `/profile/${userId}/collections` : shownMine ? '/collections/my' : '/collections',
-    ));
+    unregisterScrollKey = registerActiveScrollKey(() => viewKey());
     if (foreign && userId) void loadOwner(userId);
     if (foreign) closeLocalSearch();
-    const cached = getViewState<CollectionsViewState>(COLLECTIONS_VIEW_KEY());
-    if (mine) {
-      // Общий список из кэша держим наготове для возврата из «Моих»
-      if (cached?.data && cached.data.items.length > 0) allSnapshot = cached.data;
-      requestAnimationFrame(attachScroll);
-      void loadPage();
-      return;
-    }
+
+    const cached = mode === 'hub' || mode === 'week' ? getViewState<CollectionsViewState>(viewKey()) : null;
     if (cached?.data && cached.data.items.length > 0) {
-      const s = cached.data;
-      selectedSort = s.selectedSort;
-      items = s.items;
-      page = s.page;
-      previousPage = s.previousPage;
-      hasMore = s.hasMore;
-      loadState = s.loadState;
-      errorMsg = s.errorMsg;
+      applySnapshot(cached.data);
       requestAnimationFrame(() => {
         attachScroll();
         void restoreScrollTop(cached.scrollTop, { maxWaitMs: 5000 });
@@ -439,7 +468,8 @@
       return;
     }
 
-    page = initialCollectionListPage(listSort);
+    selectedSort = mode === 'week' ? 4 : defaultCollectionHubSort();
+    page = mode === 'mine' || mode === 'foreign' ? 0 : initialCollectionListPage(listSort);
     previousPage = initialCollectionPreviousPage();
     requestAnimationFrame(attachScroll);
     void loadPage();
@@ -449,124 +479,196 @@
     if (foreign) closeLocalSearch();
     unregisterScrollKey?.();
     unregisterScrollKey = null;
-    const allState = shownMine ? allSnapshot : snapshot();
-    if (allState) saveViewStateData(COLLECTIONS_VIEW_KEY(), allState);
+    if (mode === 'hub' || mode === 'week') saveViewStateData(viewKey(), snapshot());
     detachScroll();
   });
+
+  function onSortMenuChange(id: string) {
+    sortOpen = false;
+    onSortChange(Number(id));
+  }
 </script>
 
 {#snippet userSearch()}
   <!-- Как поиск в «Списках»: поле на всю ширину под вкладками -->
   <div class="bm-tools" role="search">
-  <div class="bm-tools__search">
-    <UiV2PillField
-      size="md"
-      type="search"
-      label={ownerLogin ? `Поиск в коллекциях у ${ownerLogin}` : 'Поиск в коллекциях'}
-      value={deskQuery}
-      autocomplete="off"
-      spellcheck={false}
-      oninput={(e) => (deskQuery = (e.currentTarget as HTMLInputElement).value)}
-    >
-      {#snippet icon()}{@html iconSearch(16)}{/snippet}
-    </UiV2PillField>
-    {#if deskQuery}
-      <button type="button" class="bm-tools__clear" aria-label="Очистить поиск" onclick={() => (deskQuery = '')}>
-        {@html iconX(14)}
-      </button>
-    {/if}
-  </div>
+    <div class="bm-tools__search">
+      <UiV2PillField
+        size="md"
+        type="search"
+        label={ownerLogin ? `Поиск в коллекциях у ${ownerLogin}` : 'Поиск в коллекциях'}
+        value={deskQuery}
+        autocomplete="off"
+        spellcheck={false}
+        oninput={(e) => (deskQuery = (e.currentTarget as HTMLInputElement).value)}
+      >
+        {#snippet icon()}{@html iconSearch(16)}{/snippet}
+      </UiV2PillField>
+      {#if deskQuery}
+        <button type="button" class="bm-tools__clear" aria-label="Очистить поиск" onclick={() => (deskQuery = '')}>
+          {@html iconX(14)}
+        </button>
+      {/if}
+    </div>
   </div>
 {/snippet}
 
-{#snippet headerActions()}
-  <CollectionsHeaderActions myActive={mine && !foreign} onMy={() => (foreign ? navigate('/collections/my') : toggleMine())} onCreate={createCollection} />
-{/snippet}
-
-<div class="view view-collections-list discover-page collections-page" bind:this={wrapEl}>
-  <!-- На телефоне вкладкам нужна вся ширина: «Мои» и «Создать» стоят рядом с заголовком -->
-  <DiscoverHero
-    title={pageTitle}
-    subtitle={pageSubtitle}
-    avatarUrl={foreign ? ownerAvatar : undefined}
-    login={foreign ? ownerLogin : undefined}
-    onTitleClick={foreign && userId ? () => openProfilePanel(userId!, { login: ownerLogin }) : undefined}
-    actions={isMobileMode() && !week && !foreign ? headerActions : undefined}
+{#snippet weekHeaderActions()}
+  <UiV2Button
+    label="Создать"
+    size="sm"
+    variant="chrome"
+    class="collections-create"
+    onclick={createCollection}
   >
-    <!-- Чужие коллекции: только шапка и поиск — без общих вкладок сортировки, «Мои» и «Создать» -->
-    {#if !week && !foreign}
-      <UiV2Tabs
-        tabs={sortTabs}
-        activeId={mine ? '' : String(selectedSort)} swipe={tabSwipe}
-        onChange={(id) => onSortChange(Number(id))}
-        class="uiv2-tabs--static collections-page__tabs"
-        rightActions={isMobileMode() ? undefined : headerActions}
-      />
-    {:else if foreign && !isMobileMode()}
-      <!-- На месте вкладок — поиск по коллекциям пользователя (закрепляется при прокрутке, как вкладки) -->
-      {@render userSearch()}
-    {/if}
-  </DiscoverHero>
+    {#snippet icon()}{@html iconPlus(16)}{/snippet}
+  </UiV2Button>
+{/snippet}
 
-  <!-- Скелетон и пустое состояние внутри блока: смена вкладки плавная, даже пока список грузится -->
-  <div use:swipeTabs={{ onSwipe: swipeToTab, enabled: isMobileMode() && !mine && !week, activeId: String(selectedSort), onSwipeProgress: (dir, progress, ms) => (tabSwipe = dir ? { dir, progress, ms } : null) }}>
-    {#if loadState === 'loading' && items.length === 0}
-      <div class="collections-feed" aria-busy="true">
-        <UiV2CollectionCardSkeleton count={6} />
-      </div>
-    {:else if loadState === 'error'}
-      <UiV2ContentRetryOverlay message={errorMsg} onRetry={() => void loadPage()} />
-    {:else if loadState === 'empty'}
-      {#if mine && !foreign}
-        <div class="discover-empty">
-          <span class="discover-empty__icon" aria-hidden="true">{@html iconFolder(26)}</span>
-          <p class="discover-empty__title">Ой, а тут коллекций нет!</p>
-          <p class="discover-empty__text">Соберите любимые релизы в подборку и поделитесь ею с другими</p>
-          <UiV2Button label="Создать коллекцию" variant="primary" onclick={createCollection}>
-            {#snippet icon()}{@html iconPlus(16)}{/snippet}
-          </UiV2Button>
-        </div>
-      {:else}
-        <div class="discover-empty">
-          <span class="discover-empty__icon" aria-hidden="true">{@html iconLayoutGrid(26)}</span>
-          <p class="discover-empty__title">Коллекций пока нет</p>
-        </div>
-      {/if}
-    {:else}
-      {#if foreign && searchQuery && visibleItems.length === 0 && !isLoading && !hasMore}
-        <div class="discover-empty">
-          <span class="discover-empty__icon" aria-hidden="true">{@html iconSearch(26)}</span>
-          <p class="discover-empty__title">Ничего не найдено</p>
-        </div>
-      {:else}
-        <div class="collections-feed">
-          {#each visibleItems as item (item.id)}
-            <CollectionCard data={item} />
-          {/each}
-        </div>
-      {/if}
-      {#if isLoading}
-        <div class="collections-feed" aria-busy="true">
-          <UiV2CollectionCardSkeleton count={2} />
-        </div>
-      {/if}
-      {#if !mine && !week}
-        {#if peekTabs.prev}<TabPeek dir={-1}>{@render collectionsPeek(peekTabs.prev)}</TabPeek>{/if}
-        {#if peekTabs.next}<TabPeek dir={1}>{@render collectionsPeek(peekTabs.next)}</TabPeek>{/if}
-      {/if}
-    {/if}
-  </div>
-</div>
-
-{#snippet collectionsPeek(id: string)}
-  {@const seed = tabPrefetch.get(id)}
-  <div class="collections-feed">
-    {#if seed}
-      {#each seed.items.slice(0, TAB_PEEK_ITEMS) as item (item.id)}
-        <CollectionCard data={item} />
-      {/each}
-    {:else}
-      <UiV2CollectionCardSkeleton count={6} />
-    {/if}
+{#snippet createTile()}
+  <div class="uiv2-collection uiv2-collection--poster">
+    <span class="uiv2-collection__deck" aria-hidden="true">
+      <span class="uiv2-collection__sheet uiv2-collection__sheet--back"></span>
+      <span class="uiv2-collection__sheet uiv2-collection__sheet--mid"></span>
+    </span>
+    <UiV2Button
+      label="Создать коллекцию"
+      class="uiv2-collection__media uiv2-collection__media--poster collections-hub__create-tile"
+      onclick={createCollection}
+    >
+      {#snippet icon()}{@html iconPlus(18)}{/snippet}
+    </UiV2Button>
   </div>
 {/snippet}
+
+<div
+  class="view view-collections-list discover-page collections-page"
+  class:collections-page--mine={mode === 'mine'}
+  bind:this={wrapEl}
+>
+  {#if mode === 'mine'}
+    <UiV2SectionHeader title="Все созданные вами" />
+  {:else if !isHub}
+    <DiscoverHero
+      title={pageTitle}
+      subtitle={pageSubtitle}
+      avatarUrl={foreign ? ownerAvatar : undefined}
+      login={foreign ? ownerLogin : undefined}
+      onTitleClick={foreign && userId ? () => openProfilePanel(userId!, { login: ownerLogin }) : undefined}
+      actions={week ? weekHeaderActions : undefined}
+    >
+      {#if foreign && !isMobileMode()}
+        {@render userSearch()}
+      {/if}
+    </DiscoverHero>
+  {/if}
+
+  {#if showHubSections}
+    <section class="collections-hub__section">
+      <UiV2SectionHeader
+        title="Созданные вами"
+        moreLabel={hubMine.length > 0 ? 'Показать все' : undefined}
+        onShowAll={hubMine.length > 0 ? showAllMine : undefined}
+      />
+      <UiV2ReleaseCarousel scrollbar={false} measureKey={hubMine.length}>
+        <div class="collections-hub__rail-item collections-hub__rail-item--wide">
+          {@render createTile()}
+        </div>
+        {#each hubMine as item (item.id)}
+          <div class="collections-hub__rail-item collections-hub__rail-item--wide">
+            <CollectionCard data={item} layout="poster" variant="wide" />
+          </div>
+        {/each}
+      </UiV2ReleaseCarousel>
+    </section>
+  {/if}
+
+  {#if showHubSections && hubState === 'ready'}
+    {#if hubWeekly.length > 0}
+      <section class="collections-hub__section">
+        <UiV2SectionHeader title="Популярные за неделю" />
+        <UiV2ReleaseCarousel scrollbar={false} measureKey={hubWeekly.length}>
+          {#each hubWeekly as item (item.id)}
+            <div class="collections-hub__rail-item collections-hub__rail-item--wide">
+              <CollectionCard data={item} layout="poster" variant="wide" />
+            </div>
+          {/each}
+        </UiV2ReleaseCarousel>
+      </section>
+    {/if}
+
+    {#if hubRecommended.length > 0}
+      <section class="collections-hub__section">
+        <UiV2SectionHeader title="Под ваш вкус" />
+        <UiV2ReleaseCarousel scrollbar={false} measureKey={hubRecommended.length}>
+          {#each hubRecommended as item (item.id)}
+            <div class="collections-hub__rail-item collections-hub__rail-item--wide">
+              <CollectionCard data={item} layout="poster" variant="wide" />
+            </div>
+          {/each}
+        </UiV2ReleaseCarousel>
+      </section>
+    {/if}
+  {/if}
+
+  {#if isHub}
+    <div class="collections-hub__toolbar">
+      <span class="collections-hub__total" aria-live="polite">{totalLabel}</span>
+      <button
+        bind:this={sortBtn}
+        type="button"
+        class="collections-hub__sort"
+        aria-haspopup="menu"
+        aria-expanded={sortOpen}
+        aria-label={`Сортировка: ${sortLabel}`}
+        onclick={() => (sortOpen = !sortOpen)}
+      >
+        <span class="collections-hub__sort-icon" aria-hidden="true">{@html iconArrowUpDown(15)}</span>
+        <span class="collections-hub__sort-label">{sortLabel}</span>
+        <span class="collections-hub__sort-chevron" aria-hidden="true">{@html iconChevronDown(14)}</span>
+      </button>
+    </div>
+    <UiV2PopupMenu
+      open={sortOpen}
+      dropdown
+      anchor={sortBtn}
+      title={isMobileMode() ? 'Сортировка' : ''}
+      items={sortItems}
+      onClose={() => (sortOpen = false)}
+      onCheckedChange={(id) => onSortMenuChange(id)}
+    />
+  {/if}
+
+  {#if loadState === 'loading' && items.length === 0}
+    <div class="collections-hub__grid" aria-busy="true">
+      {#if mode === 'mine'}{@render createTile()}{/if}
+      <UiV2CollectionCardSkeleton layout="poster" bare count={skeletonCount} />
+    </div>
+  {:else if loadState === 'error'}
+    <UiV2ContentRetryOverlay message={errorMsg} onRetry={retryLoad} />
+  {:else if loadState === 'empty' && mode !== 'mine'}
+    <div class="discover-empty">
+      <span class="discover-empty__icon" aria-hidden="true">{@html iconLayoutGrid(26)}</span>
+      <p class="discover-empty__title">Коллекций пока нет</p>
+    </div>
+  {:else}
+    {#if foreign && searchQuery && visibleItems.length === 0 && !isLoading && !hasMore}
+      <div class="discover-empty">
+        <span class="discover-empty__icon" aria-hidden="true">{@html iconSearch(26)}</span>
+        <p class="discover-empty__title">Ничего не найдено</p>
+      </div>
+    {:else}
+      <div class="collections-hub__grid">
+        {#if mode === 'mine'}{@render createTile()}{/if}
+        {#each visibleItems as item (item.id)}
+          <CollectionCard data={item} layout="poster" variant="wide" />
+        {/each}
+      </div>
+      {#if isLoading}
+        <div class="collections-hub__grid" aria-busy="true">
+          <UiV2CollectionCardSkeleton layout="poster" bare count={2} />
+        </div>
+      {/if}
+    {/if}
+  {/if}
+</div>

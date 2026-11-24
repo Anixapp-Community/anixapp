@@ -20,6 +20,7 @@
   import { handleUserProfileClick } from '../stores/user-profile';
   import { getSearchParams } from '../router';
   import { resolveCdnAssetUrl } from '../utils/posterUrl';
+  import { mapCollectionCard } from '../utils/collection';
   import { getBookmarksSort, setBookmarksSort, VOTE_SORT_OPTIONS } from '../constants/bookmarkSort';
   import { getBookmarksAnnounceFilter, setBookmarksAnnounceFilter } from '../constants/bookmarkFilter';
   import BookmarksDesktopHead from '../components/bookmarks/BookmarksDesktopHead.svelte';
@@ -246,20 +247,6 @@
 
   function mapHistoryToReleaseCard(raw: Record<string, unknown>): ReleaseCardData {
     return mapHistoryRawToReleaseCard(raw);
-  }
-
-  function mapCollectionToCardData(raw: Record<string, unknown>): CollectionCardData {
-    return {
-      id: raw.id as number,
-      title: (raw.title ?? raw.name ?? 'Без названия') as string,
-      image: resolveCdnAssetUrl(raw.image as string) || undefined,
-      description: (raw.description as string) || undefined,
-      releaseCount: typeof raw.release_count === 'number' ? raw.release_count : undefined,
-      notesCount: typeof raw.notes_count === 'number' ? raw.notes_count : (typeof raw.comment_count === 'number' ? raw.comment_count : undefined),
-      bookmarksCount: typeof raw.bookmarks_count === 'number' ? raw.bookmarks_count : undefined,
-      favoritesCount: typeof raw.favorites_count === 'number' ? raw.favorites_count : undefined,
-      isFavorite: !!(raw.is_favorite),
-    };
   }
 
   function extractTotalCount(data: Record<string, unknown> | null | undefined, fallback: number): number {
@@ -677,7 +664,7 @@
       const { content, total, exhaustive } = await fetchPage(nextPage);
       if (gen !== loadGen) return;
       if (isCollectionsTab) {
-        collectionItems = [...collectionItems, ...content.map(mapCollectionToCardData)];
+        collectionItems = [...collectionItems, ...content.map(mapCollectionCard)];
       } else if (isHistoryTab) {
         items = [...items, ...content.map(mapHistoryToReleaseCard)];
       } else {
@@ -802,7 +789,7 @@
     const { content, total, exhaustive } = await fetchPage(0, tabId);
     return {
       items: tabId === 'collections' ? [] : content.map(tabId === 'history' ? mapHistoryToReleaseCard : mapReleaseToCardData),
-      collectionItems: tabId === 'collections' ? content.map(mapCollectionToCardData) : [],
+      collectionItems: tabId === 'collections' ? content.map(mapCollectionCard) : [],
       total,
       hasMore: !exhaustive && (tabId === 'votes' ? content.length >= 25 && !(total > 0 && 25 >= total) : content.length > 0),
       nextPage: 1,
@@ -924,7 +911,7 @@
       }
 
       if (tabId === 'collections') {
-        collectionItems = content.map(mapCollectionToCardData);
+        collectionItems = content.map(mapCollectionCard);
       } else if (tabId === 'history') {
         items = content.map(mapHistoryToReleaseCard);
       } else {

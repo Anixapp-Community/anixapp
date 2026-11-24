@@ -657,6 +657,7 @@ contextBridge.exposeInMainWorld('anixApi', {
   collection: {
     info: (id) => ipcRenderer.invoke('anix:collectionById', id),
     all: (page = 0, options = {}) => ipcRenderer.invoke('anix:collectionsAll', page, options),
+    hub: () => ipcRenderer.invoke('anix:collectionHub'),
     profileCollections: (profileId, page = 0) =>
       ipcRenderer.invoke('anix:collectionProfileCollections', profileId, page),
     releaseCollections: (releaseId, page = 0, sort = 1) =>
