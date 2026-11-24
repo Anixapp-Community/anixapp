@@ -15,6 +15,7 @@
   import UiV2Card from '../components/uikit-v2/UiV2Card.svelte';
   import UiV2Button from '../components/uikit-v2/UiV2Button.svelte';
   import { requireAuth } from '../stores/auth';
+  import { handleBanCode, handleBanError } from '../stores/ban-alert';
   import { notifyVotesChanged } from '../utils/favorites-events';
   import { handleUserProfileClick } from '../stores/user-profile';
   import { getSearchParams } from '../router';
@@ -1029,7 +1030,9 @@
     if (!requireAuth() || voteBusyIds.has(id) || !window.anixApi) return;
     voteBusyIds = new Set([...voteBusyIds, id]);
     try {
-      await window.anixApi.release.vote(id, stars);
+      const res = (await window.anixApi.release.vote(id, stars)) as { code?: number } | undefined;
+      const code = Number(res?.code ?? 0);
+      if (code !== 0 && handleBanCode(code, 'votes')) return;
       items = items.filter((i) => i.id !== id);
       totalCount = Math.max(0, totalCount - 1);
       if (!items.length) {
@@ -1037,7 +1040,8 @@
         else loadState = 'empty';
       }
       notifyVotesChanged({ releaseId: id });
-    } catch {
+    } catch (err) {
+      handleBanError(err, 'votes');
       /* оценка не сохранилась — звёзды остаются */
     } finally {
       const next = new Set(voteBusyIds);

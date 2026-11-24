@@ -4,7 +4,7 @@
   import { fmtRelative, getProfileBanNotice, getSelfBanNotice, isLottieBadgeUrl, posterUrl } from '../../_utils';
   import { openProfileHealthPanel } from '../../../../stores/profile-panel';
   import { fetchCdnJson, toCdnProxyUrl } from '../../../../utils/posterUrl';
-  import { iconBan } from '../../../../components/icons';
+  import { iconBan, iconUser } from '../../../../components/icons';
   import AppBadges from '../../../../components/AppBadges.svelte';
   import BadgeTip from '../../../../components/BadgeTip.svelte';
 
@@ -71,7 +71,7 @@
       <div
         class="profile__avatar{!profile.avatar ? ' profile__avatar--empty' : ''}"
         style={profile.avatar ? `background-image:url('${posterUrl(profile.avatar)}')` : ''}
-      ></div>
+      >{#if !profile.avatar}{@html iconUser(48)}{/if}</div>
       {#if profile.is_online}
         <span class="profile__online-dot"></span>
       {/if}

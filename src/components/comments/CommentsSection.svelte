@@ -16,6 +16,7 @@
   import type { CommentData, CommentVoteValue } from '../../types/comment';
   import { normalizeComment, normalizeCommentsFromResponse, buildReleaseCommentAddBody, apiVotePayload, commentAddErrorMessage } from '../../utils/comment';
   import { showToast } from '../../stores/toast';
+  import { BanActionError, handleBanCode, handleBanError, isBanActionError } from '../../stores/ban-alert';
   import { formatAnixError } from '../../native/anix-errors';
   import { resolveJacksonRefs } from '../../utils/jackson-refs';
   import {
@@ -163,7 +164,8 @@
       (prev.userVote ?? 0) as CommentVoteValue,
       (updated.userVote ?? 0) as CommentVoteValue,
     );
-    commentsApi.vote(id, apiVote).catch(() => {
+    commentsApi.vote(id, apiVote).catch((err) => {
+      handleBanError(err, 'votes');
       syncItems(
         patchUiV2CommentNode(nodes, updated.id, {
           userVote: prev.userVote,
@@ -219,7 +221,9 @@
       )) as { comment?: Record<string, unknown>; code?: number };
 
       if (res.code != null && res.code !== 0) {
-        throw new Error(commentAddErrorMessage(Number(res.code)));
+        const code = Number(res.code);
+        if (handleBanCode(code, 'comments')) throw new BanActionError();
+        throw new Error(commentAddErrorMessage(code));
       }
 
       if (res.comment) {
@@ -239,6 +243,8 @@
         showToast('Комментарий отправлен', 'ok');
       }
     } catch (err) {
+      if (isBanActionError(err)) throw err;
+      if (handleBanError(err, 'comments')) throw new BanActionError();
       // Не глотаем ошибку: иначе композер очищается и кажется, что комментарий ушёл.
       showToast(formatAnixError(err), 'err');
       throw err;
@@ -276,7 +282,8 @@
         isSpoiler: payload.isSpoiler,
       });
     } catch (err) {
-      showToast(formatAnixError(err), 'err');
+      const banned = handleBanError(err, 'comments');
+      if (!banned) showToast(formatAnixError(err), 'err');
       syncItems(
         patchUiV2CommentNode(nodes, node.id, {
           message: prev.message,
@@ -304,7 +311,8 @@
     try {
       await commentsApi.delete(id);
     } catch (err) {
-      showToast(formatAnixError(err), 'err');
+      const banned = handleBanError(err, 'comments');
+      if (!banned) showToast(formatAnixError(err), 'err');
       syncItems(
         patchUiV2CommentNode(nodes, node.id, {
           isDeleted: prev.isDeleted,

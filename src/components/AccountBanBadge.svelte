@@ -6,8 +6,16 @@
   let { size = 16 }: Props = $props();
 
   const state = $derived($accountBan);
-  const active = $derived(isAccountBanActive(state));
+  let now = $state(Date.now());
+  const active = $derived(isAccountBanActive(state, now));
   const title = $derived(accountBanTitle(state));
+
+  // Пока бан активен — пересчитываем срок, чтобы бейдж гас сам, без перезапуска.
+  $effect(() => {
+    if (!active) return;
+    const id = setInterval(() => { now = Date.now(); }, 30_000);
+    return () => clearInterval(id);
+  });
 </script>
 
 {#if active}

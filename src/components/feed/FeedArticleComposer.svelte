@@ -68,6 +68,10 @@
   import { toFeedImageUrl } from '../../utils/posterUrl';
   import { feedArticleToUiV2FeedPost } from '../../utils/uikit-v2-feed-post';
   import { showToast } from '../../stores/toast';
+  import { showBanAlert, showBanAlertText } from '../../stores/ban-alert';
+  import { get } from 'svelte/store';
+  import { accountBan, noteAccountBan } from '../../stores/account-ban';
+  import { formatHealthDateTime } from '../../utils/profile-health';
   import type { FeedArticle } from '../../types/feed';
   import {
     deleteFeedDraft,
@@ -1742,6 +1746,25 @@
     step = 'preview';
   }
 
+  /** 402 при публикации — это бан аккаунта, а не «что-то пошло не так». */
+  function publishBanAlert(): { title: string; message: string; ok: string } {
+    const state = get(accountBan);
+    const until = state.permanent
+      ? 'навсегда'
+      : state.expires > 0
+        ? `до ${formatHealthDateTime(state.expires)}`
+        : '';
+    const action = isEditMode ? 'Сохранение записи' : 'Публикация записей';
+    const verb = isEditMode ? 'недоступно' : 'недоступна';
+    return {
+      title: 'Аккаунт заблокирован',
+      message: until
+        ? `${action} ${verb}: аккаунт заблокирован ${until}.`
+        : `${action} ${verb}: аккаунт заблокирован.`,
+      ok: 'Понятно',
+    };
+  }
+
   async function publish() {
     if (!canPublish || !channelId) return;
     const editId = Number(editArticle?.id ?? 0);
@@ -1790,6 +1813,15 @@
             });
       const code = Number(res?.code ?? 0);
       if (code !== 0) {
+        if (code === 403) {
+          showBanAlert('permanent');
+          return;
+        }
+        if (code === 402) {
+          noteAccountBan(402);
+          showBanAlertText(publishBanAlert());
+          return;
+        }
         errorMsg = publishError(code);
         return;
       }
@@ -1809,6 +1841,16 @@
       onPublished?.(articleId, channelId);
       onClose();
     } catch (err) {
+      const banCode = Number((err as { code?: number; status?: number })?.code ?? (err as { code?: number; status?: number })?.status ?? 0);
+      if (banCode === 403) {
+        showBanAlert('permanent');
+        return;
+      }
+      if (banCode === 402) {
+        noteAccountBan(402);
+        showBanAlertText(publishBanAlert());
+        return;
+      }
       errorMsg = err instanceof Error ? err.message : String(err);
     } finally {
       publishBusy = false;

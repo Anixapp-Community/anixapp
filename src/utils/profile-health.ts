@@ -1,4 +1,3 @@
-import { formatHistoryViewTime } from './historyFormat';
 import { COMMENT_RULES_URL } from './commentRules';
 import { sanitizeArticleHtml } from './article-block-format';
 
@@ -29,42 +28,60 @@ export type ProfileEnforcementItem = {
   raw: Record<string, unknown>;
 };
 
+/** Текст диалога «Как это работает» — дословно из APK (R.string.status_info). */
 export const PROFILE_HEALTH_INFO_HTML = `
-<p>Здесь вы можете отслеживать состояние своего аккаунта: просматривать историю банов, модерационные действия с вашим контентом и текущие ограничения.</p>
-<p><strong>Что отображается на странице</strong></p>
-<ul>
-  <li>Текущий статус аккаунта (безупречный / забанен / дата последнего бана)</li>
-  <li>Количество банов за все время и за последние 3 месяца</li>
-  <li>Активные ограничения на публикации (если есть) с указанием срока</li>
-  <li>Информация о скрытии публикаций из блога в общей ленте</li>
-  <li>История всех ограничений с причинами и датами</li>
-  <li>Список модерационных действий с вашим контентом</li>
-</ul>
+<p>Здесь видно, как модерация относится к вашему аккаунту: действуют ли сейчас ограничения, сколько было банов и что модераторы делали с вашим контентом.</p>
+<p><strong>Что на странице</strong></p>
+<p>- Состояние аккаунта и число банов за всё время и за последние 3 месяца</p>
+<p>- Текущие ограничения: блокировка аккаунта, публикация в блоге и показ его записей в общей ленте, со сроками</p>
+<p>- История модерации: во вкладке «Аккаунт» — баны и ограничения блога, во вкладке «Контент» — правки и удаления ваших записей, коллекций и комментариев</p>
+<p>Нажмите на запись истории, чтобы узнать подробности.</p>
 <p><strong>Что ограничивается во время бана</strong></p>
 <p>При нарушении правил сообщества на ваш аккаунт могут быть наложены временные ограничения:</p>
-<ul>
-  <li>написание комментариев</li>
-  <li>создание коллекций</li>
-  <li>публикация записей</li>
-  <li>изменение аватара и обложки</li>
-  <li>смена имени пользователя</li>
-  <li>обновление статуса</li>
-</ul>
+<p>- написание комментариев</p>
+<p>- создание коллекций</p>
+<p>- публикация записей</p>
+<p>- изменение аватара и обложки</p>
+<p>- смена имени пользователя</p>
+<p>- обновление статуса</p>
 <p>Ограничения действуют указанный срок, после чего автоматически снимаются.</p>
+<p><strong>Апелляция</strong></p>
+<p>Если вы не согласны с решением, нажмите «Подать апелляцию» в нужной записи истории. Модераторы рассмотрят обращение и примут решение.</p>
 <p><strong>Важно:</strong> систематические нарушения правил могут привести к перманентной блокировке аккаунта.</p>
 `.trim();
 
 export { COMMENT_RULES_URL };
+
+const MONTHS_SHORT = ['янв.', 'фев.', 'мар.', 'апр.', 'мая', 'июн.', 'июл.', 'авг.', 'сен.', 'окт.', 'нояб.', 'дек.'];
 
 function asTs(v: unknown): number {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 }
 
+function toMs(ts: number): number {
+  return ts > 1e12 ? ts : ts * 1000;
+}
+
 function isActiveExpire(ts: number): boolean {
   if (!ts || ts <= 0) return false;
-  const ms = ts > 1e12 ? ts : ts * 1000;
-  return ms > Date.now();
+  return toMs(ts) > Date.now();
+}
+
+/** «27 нояб. 23:00» — SimpleDateFormat("d MMM HH:mm") из оригинала. */
+export function formatHealthDateTime(ts: number): string {
+  if (!ts) return '';
+  const d = new Date(toMs(ts));
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${time}`;
+}
+
+/** «23 нояб.» / «23 нояб. 2025» — как Time.II111lII1I(j, "d MMM", "yyyy"). */
+export function formatHealthDate(ts: number): string {
+  if (!ts) return '';
+  const d = new Date(toMs(ts));
+  const base = `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
+  return d.getFullYear() === new Date().getFullYear() ? base : `${base} ${d.getFullYear()}`;
 }
 
 export function normalizeHealthStatus(raw: Record<string, unknown> | null | undefined): ProfileHealthStatus {
@@ -78,55 +95,64 @@ export function normalizeHealthStatus(raw: Record<string, unknown> | null | unde
   };
 }
 
+export type HealthTone = 'red' | 'orange' | 'green';
+
 export function isCurrentlyBanned(status: ProfileHealthStatus): boolean {
   return isActiveExpire(status.lastBanExpires);
 }
 
-export function healthStatusTitle(status: ProfileHealthStatus): string {
-  return isCurrentlyBanned(status) ? 'Вы забанены' : 'Вы безупречны';
+export function isRestricted(status: ProfileHealthStatus): boolean {
+  return !isCurrentlyBanned(status)
+    && (isActiveExpire(status.blogSuspensionExpires) || isActiveExpire(status.blogMuteExpires));
 }
 
+export function healthTone(status: ProfileHealthStatus): HealthTone {
+  if (isCurrentlyBanned(status)) return 'red';
+  if (isRestricted(status)) return 'orange';
+  return 'green';
+}
+
+/** «Аккаунт заблокирован» / «Есть ограничения» / «Всё в порядке». */
+export function healthStatusTitle(status: ProfileHealthStatus): string {
+  if (isCurrentlyBanned(status)) return 'Аккаунт заблокирован';
+  if (isRestricted(status)) return 'Есть ограничения';
+  return 'Всё в порядке';
+}
+
+/** «Блокировка действует до …» / «Сейчас ограничений нет» / «Банов не было — так держать». */
 export function healthStatusNote(status: ProfileHealthStatus): string {
   if (isCurrentlyBanned(status)) {
-    const until = status.lastBanExpires > 0
-      ? ` до ${formatHistoryViewTime(status.lastBanExpires)}`
-      : '';
-    return `сейчас действуют ограничения${until}`;
+    return status.lastBanExpires > 0
+      ? `Блокировка действует до ${formatHealthDateTime(status.lastBanExpires)}`
+      : 'Блокировка действует';
   }
-  if (status.lastBanTimestamp > 0) {
-    return `последний бан · ${formatHistoryViewTime(status.lastBanTimestamp)}`;
-  }
-  return 'банов нет';
+  if (isRestricted(status)) return 'Для вашего блога сейчас действуют ограничения';
+  return status.banCount > 0 ? 'Сейчас ограничений нет' : 'Банов не было — так держать';
 }
 
-/** Строка про последний бан: показывается, даже когда бан уже истёк. */
-export function lastBanLine(status: ProfileHealthStatus): string {
-  const hasHistory = status.banCount > 0 || status.lastBanTimestamp > 0 || status.lastBanExpires > 0;
-  if (!hasHistory) return '';
-  if (status.lastBanTimestamp > 0) {
-    const until = status.lastBanExpires > 0
-      ? ` · до ${formatHistoryViewTime(status.lastBanExpires)}`
-      : '';
-    return `Последний бан: ${formatHistoryViewTime(status.lastBanTimestamp)}${until}`;
-  }
-  if (status.lastBanExpires > 0) {
-    return `Последний бан: до ${formatHistoryViewTime(status.lastBanExpires)}`;
-  }
-  return 'Последний бан: дата неизвестна';
+export type HealthRestrictionRow = { title: string; until: string };
+
+/** Строка ограничения блога: показывается только пока срок не истёк. */
+export function blogSuspensionRow(status: ProfileHealthStatus): HealthRestrictionRow | null {
+  if (!isActiveExpire(status.blogSuspensionExpires)) return null;
+  return {
+    title: 'Публикации в блоге запрещены',
+    until: `до ${formatHealthDateTime(status.blogSuspensionExpires)}`,
+  };
 }
 
-export function blogSuspensionLine(status: ProfileHealthStatus): string {
-  if (isActiveExpire(status.blogSuspensionExpires)) {
-    return `Имеется ограничение на создание новых записей до ${formatHistoryViewTime(status.blogSuspensionExpires)}`;
-  }
-  return 'Нет ограничения на создание новых записей';
+export function blogMuteRow(status: ProfileHealthStatus): HealthRestrictionRow | null {
+  if (!isActiveExpire(status.blogMuteExpires)) return null;
+  return {
+    title: 'Блог скрыт из общей ленты',
+    until: `до ${formatHealthDateTime(status.blogMuteExpires)}`,
+  };
 }
 
-export function blogMuteLine(status: ProfileHealthStatus): string {
-  if (isActiveExpire(status.blogMuteExpires)) {
-    return `Имеется скрытие всех записей из блога в общей ленте до ${formatHistoryViewTime(status.blogMuteExpires)}`;
-  }
-  return 'Нет скрытия всех записей из блога в общей ленте';
+/** Плитка «Последний бан»: скрыта, если банов не было. */
+export function lastBanTile(status: ProfileHealthStatus): string | null {
+  if (status.lastBanTimestamp <= 0) return null;
+  return formatHealthDate(status.lastBanTimestamp);
 }
 
 export function normalizeEnforcementList(data: unknown): ProfileEnforcementItem[] {
@@ -179,12 +205,7 @@ export function normalizeEnforcement(raw: Record<string, unknown>): ProfileEnfor
 
 /** Дедлайн модерации: «24 сент. 00:00» */
 export function formatEnforcementDeadline(timestamp: number): string {
-  if (!timestamp) return '';
-  const ms = timestamp > 1e12 ? timestamp : timestamp * 1000;
-  const d = new Date(ms);
-  const month = d.toLocaleDateString('ru-RU', { month: 'short' }).replace(/\.$/, '');
-  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return `${d.getDate()} ${month}. ${time}`;
+  return formatHealthDateTime(timestamp);
 }
 
 /** Нужно исправить контент до дедлайна (Android AppealType.ADJUSTMENT). */
@@ -193,6 +214,31 @@ export function isAdjustmentRequired(item: ProfileEnforcementItem): boolean {
   if (item.appealType !== 'ADJUSTMENT') return false;
   if (item.appealStatus !== 'NOT_SUBMITTED') return false;
   return isActiveExpire(item.appealExpiresTimestamp ?? 0);
+}
+
+export function isExpiringActive(item: ProfileEnforcementItem): boolean {
+  if (item.isRevoked) return false;
+  if (!item.expirationTimestamp || item.expirationTimestamp <= 0) return true;
+  return toMs(item.expirationTimestamp) > Date.now();
+}
+
+/** Плашка состояния записи истории: «Действует» / «Отменено» / null. */
+export function enforcementStateLabel(item: ProfileEnforcementItem): string | null {
+  if (item.isRevoked) return 'Отменено';
+  if (isExpiringActive(item)) return 'Действует';
+  return null;
+}
+
+export function enforcementEmptyText(tab: HealthTab): { title: string; summary: string } {
+  return tab === 'account'
+    ? {
+        title: 'Всё в порядке',
+        summary: 'Здесь появится информация об ограничениях вашего аккаунта в случае нарушения правил',
+      }
+    : {
+        title: 'Всё в порядке',
+        summary: 'Здесь появится история изменений или удалений ваших записей, комментариев и коллекций, если они нарушат правила',
+      };
 }
 
 export function enforcementTargetPath(item: ProfileEnforcementItem): string | null {
@@ -316,17 +362,15 @@ export function enforcementListTitle(item: ProfileEnforcementItem): string {
     case 'collection_edit':
       return `Изменена коллекция ${ref}`.trim();
     case 'profile_ban':
-      return item.expirationTimestamp
-        ? `Бан до ${formatHistoryViewTime(item.expirationTimestamp)}`
-        : 'Бан аккаунта';
+      if (item.isRevoked) return `Разбан${ref ? ` ${ref}` : ''}`;
+      if (!item.expirationTimestamp) return 'Бан бессрочно';
+      return `Бан до ${formatHealthDateTime(item.expirationTimestamp)}`;
     case 'channel_suspension':
-      return item.expirationTimestamp
-        ? `Ограничение публикаций до ${formatHistoryViewTime(item.expirationTimestamp)}`
-        : 'Ограничение публикаций';
+      if (!item.expirationTimestamp) return 'Ограничена публикация в блоге бессрочно';
+      return `Ограничена публикация в блоге до ${formatHealthDateTime(item.expirationTimestamp)}`;
     case 'channel_mute':
-      return item.expirationTimestamp
-        ? `Скрыты публикации из блога до ${formatHistoryViewTime(item.expirationTimestamp)}`
-        : 'Скрыты публикации из блога';
+      if (!item.expirationTimestamp) return 'Скрыты публикации из блога бессрочно';
+      return `Скрыты публикации из блога до ${formatHealthDateTime(item.expirationTimestamp)}`;
     default:
       return item.reason?.trim() || 'Модерационное действие';
   }
@@ -350,9 +394,10 @@ export function enforcementListHint(item: ProfileEnforcementItem): string {
   return item.reason?.trim() || '';
 }
 
+/** «От 23 нояб. 05:13» */
 export function enforcementTimeLabel(item: ProfileEnforcementItem): string {
   if (!item.creationTimestamp) return '';
-  return `От ${formatHistoryViewTime(item.creationTimestamp)}`;
+  return formatHealthDateTime(item.creationTimestamp);
 }
 
 export function extractArticleText(entity: Record<string, unknown> | null): string {
@@ -404,59 +449,106 @@ export function enforcementDetailTitle(item: ProfileEnforcementItem): string {
     if (a === 'restored') return 'Восстановлена запись';
     return 'Отредактирована запись';
   }
+  if (item.type === 'profile_ban') return 'Блокировка аккаунта';
+  if (item.type === 'channel_suspension') return 'Ограничение публикации';
+  if (item.type === 'channel_mute') return 'Скрыты публикации';
   return enforcementListTitle(item);
 }
 
+export type EnforcementDetailSection = { label: string; value: string };
+
+/** Структурированный текст диалога: вводная строка + подписанные блоки. */
 export function enforcementDetailBody(item: ProfileEnforcementItem): {
   lead: string;
-  contentLabel?: string;
-  content?: string;
-  moderatorLabel?: string;
-  moderatorMessage?: string;
+  sections: EnforcementDetailSection[];
 } {
-  const when = item.creationTimestamp ? formatHistoryViewTime(item.creationTimestamp) : 'недавно';
-  const channel = extractChannelLogin(item.entity) || 'канале';
+  const when = item.creationTimestamp ? formatHealthDateTime(item.creationTimestamp) : '';
+  const reason = item.reason?.trim() || '';
   const text = extractArticleText(item.entity);
+  const channel = extractChannelLogin(item.entity);
+  const sections: EnforcementDetailSection[] = [];
+
+  const pushReason = () => {
+    if (reason) sections.push({ label: 'Причина', value: reason });
+  };
 
   if (isAdjustmentRequired(item)) {
     const deadline = item.appealExpiresTimestamp
       ? formatEnforcementDeadline(item.appealExpiresTimestamp)
-      : 'указанного срока';
+      : '';
+    if (deadline) sections.push({ label: 'Исправить до', value: deadline });
+    if (when) sections.push({ label: 'Выдано', value: when });
+    pushReason();
     if (item.type === 'collection_edit') {
       return {
-        lead: `Ваша коллекция нарушает правила сообщества. Требуется принять действия до ${deadline}, иначе коллекция будет удалена навсегда.`,
-        moderatorLabel: item.reason ? 'Сообщение модератора:' : undefined,
-        moderatorMessage: item.reason || undefined,
+        lead: 'Ваша коллекция нарушает правила сообщества. Её нужно исправить, иначе она будет удалена навсегда.',
+        sections,
+      };
+    }
+    if (item.type.endsWith('_comment_edit')) {
+      return {
+        lead: 'Ваш комментарий нарушает правила сообщества. Его нужно исправить, иначе он будет удалён навсегда.',
+        sections,
       };
     }
     return {
-      lead: `Ваша запись на канале «${channel}» нарушает правила сообщества. Требуется принять действия до ${deadline}, иначе запись будет удалена навсегда.`,
-      moderatorLabel: item.reason ? 'Сообщение модератора:' : undefined,
-      moderatorMessage: item.reason || undefined,
+      lead: 'Ваша запись нарушает правила сообщества. Её нужно исправить, иначе она будет удалена навсегда.',
+      sections,
     };
+  }
+
+  if (item.type === 'profile_ban') {
+    if (when) sections.push({ label: 'Выдан', value: when });
+    sections.push({
+      label: 'Действует до',
+      value: item.expirationTimestamp ? formatHealthDateTime(item.expirationTimestamp) : 'бессрочно',
+    });
+    pushReason();
+    return { lead: 'На ваш аккаунт была наложена блокировка.', sections };
+  }
+
+  if (item.type === 'channel_suspension' || item.type === 'channel_mute') {
+    const lead = item.type === 'channel_suspension'
+      ? 'Публикации в вашем блоге ограничены.'
+      : 'Публикации из вашего блога скрыты из общей ленты.';
+    if (when) sections.push({ label: 'Выдано', value: when });
+    sections.push({
+      label: 'Действует до',
+      value: item.expirationTimestamp ? formatHealthDateTime(item.expirationTimestamp) : 'бессрочно',
+    });
+    pushReason();
+    return { lead, sections };
   }
 
   if (item.type === 'article_edit') {
     const a = articleAction(item);
     const verb = a === 'deleted' ? 'удалена' : a === 'restored' ? 'восстановлена' : 'изменена';
+    if (when) sections.push({ label: 'Дата', value: when });
+    pushReason();
+    if (text) sections.push({ label: 'Содержание записи', value: text });
     return {
-      lead: `Ваша запись на канале «${channel}», оставленная ${when}, была ${verb}, поскольку нарушала правила сообщества.`,
-      contentLabel: text ? 'Содержание вашей записи:' : undefined,
-      content: text || undefined,
+      lead: `Ваша запись${channel ? ` на канале «${channel}»` : ''} была ${verb}, поскольку нарушала правила сообщества.`,
+      sections,
     };
   }
 
-  if (item.type.startsWith('profile_ban') || item.type === 'channel_suspension' || item.type === 'channel_mute') {
+  if (item.type.endsWith('_comment_edit')) {
+    const target = item.type === 'release_comment_edit'
+      ? 'к релизу'
+      : item.type === 'collection_comment_edit'
+        ? 'к коллекции'
+        : 'к записи';
+    const ref = entityRef(item);
+    if (when) sections.push({ label: 'Дата', value: when });
+    pushReason();
+    if (text) sections.push({ label: 'Содержание комментария', value: text });
     return {
-      lead: item.reason?.trim()
-        || `Ограничение от ${when}${item.expirationTimestamp ? ` до ${formatHistoryViewTime(item.expirationTimestamp)}` : ''}.`,
+      lead: `Ваш комментарий ${target}${ref ? ` ${ref}` : ''} был удалён, поскольку нарушал правила сообщества.`,
+      sections,
     };
   }
 
-  return {
-    lead: item.reason?.trim()
-      || `Модерационное действие от ${when}.`,
-    contentLabel: text ? 'Содержание:' : undefined,
-    content: text || undefined,
-  };
+  if (when) sections.push({ label: 'Дата', value: when });
+  pushReason();
+  return { lead: 'Модерационное действие с вашим контентом.', sections };
 }

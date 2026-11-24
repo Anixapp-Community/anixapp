@@ -13,6 +13,7 @@
   import { isAuthenticated, authReady, requireAuth } from '../stores/auth';
   import { feedArticleFocusId, feedChannelFocusId, takeFeedArticleFocus, takeFeedChannelFocus } from '../stores/feed-focus';
   import { showToast } from '../stores/toast';
+  import { handleBanError } from '../stores/ban-alert';
   import {
     beginScrollRestore,
     buildViewStateKey,
@@ -1697,6 +1698,7 @@
       moreArticles = unpatch(moreArticles);
       if (focusArticle?.id === article.id) focusArticle = applyArticleVote(focusArticle, prevVote);
       if (spotlightArticle?.id === article.id) spotlightArticle = applyArticleVote(spotlightArticle, prevVote);
+      if (handleBanError(err, 'votes')) return;
       errorMsg = String(err);
     }
   }

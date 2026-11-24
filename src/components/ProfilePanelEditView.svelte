@@ -24,6 +24,9 @@
   } from './icons';
   import OAuthBrandIcon from './OAuthBrandIcon.svelte';
   import { showToast } from '../stores/toast';
+  import { banActionAlert, handleBanAction, handleBanActionError, handleBanCode, showBanAlertText } from '../stores/ban-alert';
+  import { refreshAccountBan } from '../stores/account-ban';
+  import { askConfirm } from '../stores/confirm-dialog';
   import { formatHistoryViewTime } from '../utils/historyFormat';
   import UiV2BackBar from './uikit-v2/UiV2BackBar.svelte';
   import UiV2ChoiceSheet, { type UiV2ChoiceOption } from './uikit-v2/UiV2ChoiceSheet.svelte';
@@ -276,7 +279,14 @@
 
     if (isServiceBound(id)) {
       if (!api.unbindOAuthService) return;
-      if (!confirm(service.unlinkConfirm)) return;
+      const unlinkOk = await askConfirm({
+        title: 'Отвязка сервиса',
+        message: service.unlinkConfirm,
+        confirmLabel: 'Отвязать',
+        cancelLabel: 'Отмена',
+        danger: true,
+      });
+      if (!unlinkOk) return;
       oauthBusy = id;
       try {
         const res = await api.unbindOAuthService(id);
@@ -441,6 +451,7 @@
     try {
       const res = await window.anixApi.settings.setAvatar(dataUrl, name);
       if (res?.code != null && res.code !== 0) {
+        if (handleBanAction(Number(res.code), 'Смена фото профиля')) return;
         showToast('Не удалось обновить фото профиля', 'err');
         return;
       }
@@ -448,7 +459,8 @@
       if (nextAvatar) onProfilePatched?.({ avatar: nextAvatar });
       closeMediaPicker();
       showToast('Фото профиля обновлено');
-    } catch {
+    } catch (err) {
+      if (handleBanActionError(err, 'Смена фото профиля')) return;
       showToast('Не удалось обновить фото профиля', 'err');
     } finally {
       mediaBusy = false;
@@ -461,6 +473,7 @@
     try {
       const res = await window.anixApi.settings.deleteAvatar();
       if (res?.code != null && res.code !== 0) {
+        if (handleBanAction(Number(res.code), 'Сброс фото профиля')) return;
         showToast('Не удалось сбросить фото', 'err');
         return;
       }
@@ -514,6 +527,7 @@
       }
       const res = await window.anixApi.channel.uploadCover(id, dataUrl, name);
       if (res?.code != null && res.code !== 0) {
+        if (handleBanAction(Number(res.code), 'Смена обложки')) return;
         showToast('Не удалось обновить обложку', 'err');
         return;
       }
@@ -522,7 +536,8 @@
       onProfilePatched?.({ cover: next || null });
       closeMediaPicker();
       showToast('Обложка обновлена');
-    } catch {
+    } catch (err) {
+      if (handleBanActionError(err, 'Смена обложки')) return;
       showToast('Не удалось обновить обложку', 'err');
     } finally {
       mediaBusy = false;
@@ -675,16 +690,62 @@
     }
   }
 
+  /** Код ответа из разных форм: { code }, { result }, число. */
+  function responseCode(res: unknown): number {
+    if (res == null) return 0;
+    if (typeof res === 'number') return Number.isFinite(res) ? res : 0;
+    const rec = res as Record<string, unknown>;
+    const n = Number(rec.code ?? rec.status ?? rec.result);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  /** Проверяем, что сервер реально применил изменение: бан или «не сохранилось». */
+  async function statusApplied(next: string): Promise<'ok' | 'banned' | 'not-saved'> {
+    try {
+      const self = (await window.anixApi?.profile?.self?.()) as Record<string, unknown> | undefined;
+      const profile = (self?.profile ?? self ?? {}) as Record<string, unknown>;
+      if (!profile || typeof profile !== 'object' || !('id' in profile)) return 'ok';
+      const now = Math.floor(Date.now() / 1000);
+      const expires = Number(profile.ban_expires ?? 0);
+      const banned = !!profile.is_banned || !!profile.is_perm_banned || expires > now;
+      if (banned) {
+        await refreshAccountBan(true);
+        return 'banned';
+      }
+      if ('status' in profile && String(profile.status ?? '') !== next) return 'not-saved';
+      return 'ok';
+    } catch {
+      return 'ok';
+    }
+  }
+
   async function saveStatus() {
     if (statusSaving || !window.anixApi?.settings?.setStatus) return;
     statusSaving = true;
     try {
       const next = statusValue.trim();
-      await window.anixApi.settings.setStatus(next);
+      const res = await window.anixApi.settings.setStatus(next);
+      const code = responseCode(res);
+      if (code !== 0) {
+        if (handleBanAction(code, 'Смена статуса')) return;
+        showToast('Не удалось сохранить статус', 'err');
+        return;
+      }
+      // Ответ «успешный», но при бане сервер статус не применяет — сверяемся с профилем.
+      const check = await statusApplied(next);
+      if (check === 'banned') {
+        showBanAlertText(banActionAlert('Смена статуса'));
+        return;
+      }
+      if (check === 'not-saved') {
+        showToast('Статус не сохранился — сервер отклонил изменение', 'err');
+        return;
+      }
       showToast('Статус обновлён');
       onProfilePatched?.({ status: next });
       goMenu();
-    } catch {
+    } catch (err) {
+      if (handleBanActionError(err, 'Смена статуса')) return;
       showToast('Ошибка при сохранении', 'err');
     } finally {
       statusSaving = false;
@@ -730,7 +791,10 @@
     loginHistoryClearBusy = true;
     try {
       const res = await window.anixApi.profile.deleteLoginHistory();
-      if (res?.code != null && res.code !== 0) throw new Error();
+      if (res?.code != null && res.code !== 0) {
+        if (handleBanCode(Number(res.code), 'loginHistory')) return;
+        throw new Error();
+      }
       loginHistory = [];
       showToast('История изменений очищена');
     } catch {
@@ -798,7 +862,13 @@
       if (loginCheckStatus === 'taken') showToast('Никнейм уже занят', 'err');
       return;
     }
-    if (!confirm('Никнейм можно менять раз в 30 дней. Продолжить?')) return;
+    const nicknameOk = await askConfirm({
+      title: 'Смена никнейма',
+      message: 'Никнейм можно менять раз в 30 дней. Продолжить?',
+      confirmLabel: 'Продолжить',
+      cancelLabel: 'Отмена',
+    });
+    if (!nicknameOk) return;
     loginSaving = true;
     try {
       const res = await window.anixApi.settings.changeLogin(val);
@@ -822,9 +892,11 @@
           loginCheckStatus = 'invalid';
           loginCheckMsg = 'Никнейм слишком короткий или содержит недопустимые символы';
         }
+        if (handleBanAction(Number(res.code ?? 0), 'Смена никнейма')) return;
         showToast(m[res.code ?? -1] ?? 'Ошибка', 'err');
       }
-    } catch {
+    } catch (err) {
+      if (handleBanActionError(err, 'Смена никнейма')) return;
       showToast('Ошибка при сохранении', 'err');
     } finally {
       loginSaving = false;
@@ -943,14 +1015,26 @@
 
   async function logout() {
     if (logoutBusy) return;
-    if (!confirm('Выйти из аккаунта и убрать его из списка быстрой смены?')) return;
+    const who = login?.trim();
+    const ok = await askConfirm({
+      title: who ? `Выход из аккаунта ${who}` : 'Выход из аккаунта',
+      message: `${who ? `Выйти из аккаунта «${who}»` : 'Выйти из текущего аккаунта'} и убрать его из списка быстрой смены? Вернуться в него можно будет только с повторным вводом данных.`,
+      confirmLabel: 'Выйти',
+      cancelLabel: 'Отмена',
+      danger: true,
+    });
+    if (!ok) return;
     logoutBusy = true;
     try {
       await window.anixApi?.auth?.logout?.();
+      // Убираем аккаунт из списка быстрой смены (основная логика — в main-процессе).
+      savedAccounts = [];
+      accountsPickerOpen = false;
       const { applyAccountSessionChange } = await import('../stores/auth');
       await applyAccountSessionChange();
     } catch {
       showToast('Не удалось выйти', 'err');
+    } finally {
       logoutBusy = false;
     }
   }
@@ -1117,7 +1201,11 @@
         <span class="profile-panel__edit-row-text">
         <span class="profile-panel__edit-row-title">Выйти из учетной записи</span>
         {#if otherAccountsCount > 0}
-          <span class="profile-panel__edit-row-sub">Вы перейдёте на другой сохранённый аккаунт</span>
+          <span class="profile-panel__edit-row-sub">
+            {login?.trim() ? `Аккаунт «${login.trim()}» — вы перейдёте на другой сохранённый` : 'Вы перейдёте на другой сохранённый аккаунт'}
+          </span>
+        {:else if login?.trim()}
+          <span class="profile-panel__edit-row-sub">Аккаунт «{login.trim()}»</span>
         {/if}
         </span>
       </button>

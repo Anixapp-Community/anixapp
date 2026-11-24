@@ -109,6 +109,15 @@ export function fmtLastSeen(ts: number): string {
   return `был(а) в сети ${date.getDate()} ${months[date.getMonth()]} в ${time}`;
 }
 
+/** «14 сент. 2026 23:00» — как SimpleDateFormat("d MMM yyyy HH:mm") в официальном приложении. */
+export function fmtBanUntilOfficial(ts: number): string {
+  if (!ts) return '';
+  const date = new Date(ts < 1e12 ? ts * 1000 : ts);
+  const months = ['янв.', 'фев.', 'мар.', 'апр.', 'мая', 'июн.', 'июл.', 'авг.', 'сен.', 'окт.', 'нояб.', 'дек.'];
+  const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()} ${time}`;
+}
+
 /** «14 сент. в 23:00» — дата окончания бана */
 export function fmtBanUntil(ts: number): string {
   if (!ts) return '';
@@ -187,14 +196,14 @@ export function getProfileBanNotice(
   if (!ban.active) return null;
 
   if (ban.perm) {
-    return `Пользователь был заблокирован навсегда за ${ban.reason}`;
+    return 'Пользователь был заблокирован за нарушение правил навсегда';
   }
 
-  const until = ban.expiresRaw > 0 ? fmtBanUntil(ban.expiresRaw) : '';
+  const until = ban.expiresRaw > 0 ? fmtBanUntilOfficial(ban.expiresRaw) : '';
   if (until) {
-    return `Пользователь был заблокирован за ${ban.reason} до ${until}`;
+    return `Пользователь был заблокирован за нарушение правил до ${until}`;
   }
-  return `Пользователь был заблокирован за ${ban.reason}`;
+  return 'Пользователь был заблокирован за нарушение правил';
 }
 
 /** Баннер своего профиля: «Вы были заблокированы за … до …». */
@@ -205,13 +214,12 @@ export function getSelfBanNotice(
   if (!ban.active) return null;
 
   if (ban.perm) {
-    return `Вы были заблокированы навсегда за ${ban.reason}. Часть функций недоступна.`;
+    return 'Пользователь был заблокирован за нарушение правил навсегда';
   }
 
-  const until = ban.expiresRaw > 0 ? fmtBanUntil(ban.expiresRaw) : '';
-  return until
-    ? `Вы были заблокированы за ${ban.reason} до ${until}. Часть функций недоступна.`
-    : `Вы были заблокированы за ${ban.reason}. Часть функций недоступна.`;
+  const until = ban.expiresRaw > 0 ? fmtBanUntilOfficial(ban.expiresRaw) : '';
+  const reason = ban.reason && ban.reason !== 'нарушение правил' ? ban.reason : 'не указана';
+  return `Вы были заблокированы за нарушение правил, часть функций для Вас сейчас недоступны.\n\nБлокировка до: ${until || 'не указана'}\nПричина: ${reason}`;
 }
 
 /** Короткий срок бана для списков: «навсегда», «ещё 3 дня». */

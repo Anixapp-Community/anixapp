@@ -480,6 +480,18 @@ html:not(.mobile-mode):not(.tv-mode) .profile-panel__inner-slide:first-child .pr
       outline-offset: 2px;
     }
   }
+
+  &--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: $color-surface-hover;
+    color: color-mix(in srgb, $color-text 32%, transparent);
+
+    :global(svg) {
+      display: block;
+    }
+  }
 }
 
 .profile-panel__online {
@@ -1024,6 +1036,7 @@ html:not(.mobile-mode):not(.tv-mode) .profile-panel__inner-slide:first-child .pr
   font-size: 0.82rem;
   line-height: 1.4;
   font-weight: 500;
+  white-space: pre-line;
 }
 
 .profile-panel__ban-alert-more {

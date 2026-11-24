@@ -4,20 +4,22 @@
   import { cubicOut } from 'svelte/easing';
   import { portal } from '../actions/portal';
   import UiV2Button from './uikit-v2/UiV2Button.svelte';
-  import { iconTrash2, iconBan, iconClock } from './icons';
+  import UiV2ScrollArea from './uikit-v2/UiV2ScrollArea.svelte';
+  import { iconBan, iconCheck, iconClock, iconShare, iconTrash2, iconEyeOff, iconUser } from './icons';
   import {
     PROFILE_HEALTH_INFO_HTML,
     COMMENT_RULES_URL,
     normalizeHealthStatus,
     normalizeEnforcementList,
     normalizeEnforcement,
+    healthTone,
     healthStatusTitle,
     healthStatusNote,
-    lastBanLine,
-    blogSuspensionLine,
-    blogMuteLine,
-    isCurrentlyBanned,
-    isAdjustmentRequired,
+    blogSuspensionRow,
+    blogMuteRow,
+    lastBanTile,
+    enforcementEmptyText,
+    enforcementStateLabel,
     enforcementListTitle,
     enforcementListHint,
     enforcementTimeLabel,
@@ -25,6 +27,7 @@
     enforcementDetailBody,
     enforcementTargetPath,
     enforcementGoTargetLabel,
+    isAdjustmentRequired,
     formatEnforcementContentHtml,
     type HealthTab,
     type ProfileHealthStatus,
@@ -47,19 +50,26 @@
   let contentItems = $state<ProfileEnforcementItem[]>([]);
   let accountState = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
   let contentState = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  let accountPage = $state(0);
+  let contentPage = $state(0);
+  let accountHasMore = $state(false);
+  let contentHasMore = $state(false);
+  let moreBusy = $state(false);
   let infoOpen = $state(false);
   let detailOpen = $state(false);
   let detailLoading = $state(false);
   let detailItem = $state<ProfileEnforcementItem | null>(null);
 
-  const banned = $derived(status ? isCurrentlyBanned(status) : false);
+  const tone = $derived(status ? healthTone(status) : 'green');
   const title = $derived(status ? healthStatusTitle(status) : '…');
   const note = $derived(status ? healthStatusNote(status) : '');
-  const lastBan = $derived(status ? lastBanLine(status) : '');
-  const suspensionLine = $derived(status ? blogSuspensionLine(status) : '');
-  const muteLine = $derived(status ? blogMuteLine(status) : '');
+  const suspension = $derived(status ? blogSuspensionRow(status) : null);
+  const mute = $derived(status ? blogMuteRow(status) : null);
+  const lastBan = $derived(status ? lastBanTile(status) : null);
   const items = $derived(tab === 'account' ? accountItems : contentItems);
   const listState = $derived(tab === 'account' ? accountState : contentState);
+  const hasMore = $derived(tab === 'account' ? accountHasMore : contentHasMore);
+  const empty = $derived(enforcementEmptyText(tab));
 
   async function loadStatus() {
     if (!window.anixApi?.profileHealth?.status) {
@@ -82,26 +92,34 @@
     }
   }
 
-  async function loadList(kind: HealthTab) {
+  async function loadList(kind: HealthTab, append = false) {
     const api = window.anixApi?.profileHealth;
     if (!api) {
       if (kind === 'account') accountState = 'error';
       else contentState = 'error';
       return;
     }
-    if (kind === 'account') accountState = 'loading';
-    else contentState = 'loading';
+    const page = append ? (kind === 'account' ? accountPage : contentPage) : 0;
+    if (!append) {
+      if (kind === 'account') accountState = 'loading';
+      else contentState = 'loading';
+    }
     try {
-      const data = kind === 'account' ? await api.account(0) : await api.content(0);
+      const data = kind === 'account' ? await api.account(page) : await api.content(page);
       const list = normalizeEnforcementList(data);
       if (kind === 'account') {
-        accountItems = list;
+        accountItems = append ? [...accountItems, ...list] : list;
+        accountPage = page + 1;
+        accountHasMore = list.length >= 20;
         accountState = 'ready';
       } else {
-        contentItems = list;
+        contentItems = append ? [...contentItems, ...list] : list;
+        contentPage = page + 1;
+        contentHasMore = list.length >= 20;
         contentState = 'ready';
       }
     } catch {
+      if (append) return;
       if (kind === 'account') {
         accountItems = [];
         accountState = 'error';
@@ -110,6 +128,13 @@
         contentState = 'error';
       }
     }
+  }
+
+  async function loadMore() {
+    if (moreBusy || !hasMore) return;
+    moreBusy = true;
+    await loadList(tab, true);
+    moreBusy = false;
   }
 
   function setTab(next: HealthTab) {
@@ -164,6 +189,14 @@
     }
   }
 
+  function stateIcon(item: ProfileEnforcementItem): string {
+    if (item.type === 'profile_ban') return iconBan(18);
+    if (item.type === 'channel_mute') return iconEyeOff(18);
+    if (item.type === 'channel_suspension') return iconShare(18);
+    if (isAdjustmentRequired(item)) return iconClock(18);
+    return iconTrash2(18);
+  }
+
   onMount(() => {
     void loadStatus();
     void loadList('account');
@@ -179,150 +212,170 @@
   {:else if loadState === 'error' || !status}
     <p class="pp-health__hint pp-health__hint--err">Не удалось загрузить статус аккаунта</p>
   {:else}
-    <section
-      class="pp-health__card"
-      class:pp-health__card--bad={banned}
-      aria-label="Статус здоровья аккаунта"
-    >
+    <section class="pp-health__card" aria-label="Состояние аккаунта">
+      <button
+        type="button"
+        class="pp-health__help"
+        aria-label="Как это работает"
+        title="Как это работает"
+        onclick={() => (infoOpen = true)}
+      >
+        <span class="pp-health__help-mark" aria-hidden="true">?</span>
+      </button>
+
       <div
         class="pp-health__avatar"
+        class:pp-health__avatar--empty={!avatarUrl}
         style={avatarUrl ? `background-image:url('${avatarUrl}')` : undefined}
         aria-hidden="true"
-      ></div>
-      <h2 class="pp-health__title">{title}</h2>
+      >{#if !avatarUrl}{@html iconUser(34)}{/if}</div>
+
+      <div class="pp-health__status">
+        <h2 class="pp-health__title">{title}</h2>
+        <span class="pp-health__status-icon pp-health__status-icon--{tone}" aria-hidden="true">
+          {#if tone === 'green'}{@html iconCheck(14)}{:else}!{/if}
+        </span>
+      </div>
       <p class="pp-health__note">{note}</p>
 
-      <div class="pp-health__stats">
-        <div class="pp-health__stat">
-          <span class="pp-health__stat-num">{status.banCount}</span>
-          <span class="pp-health__stat-label">банов</span>
-          <span class="pp-health__stat-sub">за все время</span>
+      <div class="pp-health__tiles">
+        <div class="pp-health__tile">
+          <span class="pp-health__tile-value">{status.banCount}</span>
+          <span class="pp-health__tile-label">Всего банов</span>
         </div>
-        <div class="pp-health__stat">
-          <span class="pp-health__stat-num">{status.banFor3MonthCount}</span>
-          <span class="pp-health__stat-label">банов</span>
-          <span class="pp-health__stat-sub">за 3 месяца</span>
+        <div class="pp-health__tile">
+          <span class="pp-health__tile-value">{status.banFor3MonthCount}</span>
+          <span class="pp-health__tile-label">За 3 месяца</span>
         </div>
+        {#if lastBan}
+          <div class="pp-health__tile">
+            <span class="pp-health__tile-value pp-health__tile-value--date">{lastBan}</span>
+            <span class="pp-health__tile-label">Последний бан</span>
+          </div>
+        {/if}
       </div>
 
-      <ul class="pp-health__limits">
-        {#if lastBan}
-          <li class="pp-health__last-ban">{lastBan}</li>
-        {/if}
-        <li>{suspensionLine}</li>
-        <li>{muteLine}</li>
-      </ul>
-
-      {#if banned}
-        <div class="pp-health__forbidden">
-          <p class="pp-health__forbidden-title">Пока действует блокировка, недоступны:</p>
-          <ul class="pp-health__forbidden-list">
-            <li>комментарии</li>
-            <li>создание и редактирование коллекций</li>
-            <li>публикация записей</li>
-            <li>смена аватара и никнейма</li>
-            <li>голосование</li>
-            <li>смена статуса</li>
-          </ul>
+      {#if suspension}
+        <div class="pp-health__restriction">
+          <span class="pp-health__restriction-icon" aria-hidden="true">{@html iconShare(16)}</span>
+          <span class="pp-health__restriction-body">
+            <span class="pp-health__restriction-title">{suspension.title}</span>
+            <span class="pp-health__restriction-until">{suspension.until}</span>
+          </span>
         </div>
       {/if}
 
-      <button
-        type="button"
-        class="pp-health__mean"
-        onclick={() => (infoOpen = true)}
-      >
-        Что это значит?
-      </button>
+      {#if mute}
+        <div class="pp-health__restriction">
+          <span class="pp-health__restriction-icon" aria-hidden="true">{@html iconEyeOff(16)}</span>
+          <span class="pp-health__restriction-body">
+            <span class="pp-health__restriction-title">{mute.title}</span>
+            <span class="pp-health__restriction-until">{mute.until}</span>
+          </span>
+        </div>
+      {/if}
     </section>
   {/if}
 
-  <div class="pp-health__tabs" role="tablist" aria-label="Разделы">
-    <button
-      type="button"
-      role="tab"
-      class="pp-health__tab"
-      class:pp-health__tab--on={tab === 'account'}
-      aria-selected={tab === 'account'}
-      onclick={() => setTab('account')}
-    >
-      Ограничения
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="pp-health__tab"
-      class:pp-health__tab--on={tab === 'content'}
-      aria-selected={tab === 'content'}
-      onclick={() => setTab('content')}
-    >
-      Действия с контентом
-    </button>
-  </div>
+  <section class="pp-health__history" aria-label="История модерации">
+    <h3 class="pp-health__section">История модерации</h3>
 
-  <div class="pp-health__list" role="tabpanel">
-    {#if listState === 'loading' || listState === 'idle'}
-      <p class="pp-health__hint">Загрузка…</p>
-    {:else if listState === 'error'}
-      <p class="pp-health__hint pp-health__hint--err">Не удалось загрузить список</p>
-      <div class="pp-health__retry">
-        <UiV2Button
-          label="Повторить"
-          size="md"
-          variant="chrome"
-          onclick={() => void loadList(tab)}
-        />
-      </div>
-    {:else if items.length === 0}
-      <p class="pp-health__empty">Нет данных для отображения</p>
-    {:else}
-      <ul class="pp-health__items">
-        {#each items as item (item.id)}
-          {@const needsAction = isAdjustmentRequired(item)}
-          {@const isBan =
-            item.type === 'profile_ban'
-            || item.type === 'channel_suspension'
-            || item.type === 'channel_mute'}
-          {@const hint = enforcementListHint(item)}
-          <li class="pp-health__item" class:pp-health__item--action={needsAction}>
-            <span
-              class="pp-health__item-icon"
-              class:pp-health__item-icon--action={needsAction}
-              aria-hidden="true"
-            >
-              {@html needsAction ? iconClock(18) : isBan ? iconBan(18) : iconTrash2(18)}
-            </span>
-            <div class="pp-health__item-body">
-              <p class="pp-health__item-title">{enforcementListTitle(item)}</p>
-              {#if enforcementTimeLabel(item)}
-                <p class="pp-health__item-time">{enforcementTimeLabel(item)}</p>
-              {/if}
-              {#if hint}
-                <p class="pp-health__item-reason">{hint}</p>
-              {/if}
-              <div class="pp-health__more-wrap">
-                {#if needsAction}
-                  <UiV2Button
-                    label="Принять действие"
-                    size="sm"
-                    variant="light"
-                    onclick={() => void openDetails(item)}
-                  />
-                {:else}
-                  <UiV2Button
-                    label="Подробнее"
-                    size="sm"
-                    variant="chrome"
-                    onclick={() => void openDetails(item)}
-                  />
-                {/if}
-              </div>
-            </div>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </div>
+    <div class="pp-health__tabs" role="tablist" aria-label="История модерации">
+      <button
+        type="button"
+        role="tab"
+        class="pp-health__tab"
+        class:pp-health__tab--on={tab === 'account'}
+        aria-selected={tab === 'account'}
+        onclick={() => setTab('account')}
+      >
+        Аккаунт
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="pp-health__tab"
+        class:pp-health__tab--on={tab === 'content'}
+        aria-selected={tab === 'content'}
+        onclick={() => setTab('content')}
+      >
+        Контент
+      </button>
+    </div>
+
+    <div class="pp-health__list" role="tabpanel">
+      {#if listState === 'loading' || listState === 'idle'}
+        <p class="pp-health__hint">Загрузка…</p>
+      {:else if listState === 'error'}
+        <p class="pp-health__hint pp-health__hint--err">Не удалось загрузить список</p>
+        <div class="pp-health__retry">
+          <UiV2Button
+            label="Повторить"
+            size="md"
+            variant="chrome"
+            onclick={() => void loadList(tab)}
+          />
+        </div>
+      {:else if items.length === 0}
+        <div class="pp-health__empty-card">
+          <p class="pp-health__empty-title">{empty.title}</p>
+          <p class="pp-health__empty-summary">{empty.summary}</p>
+        </div>
+      {:else}
+        <ul class="pp-health__items">
+          {#each items as item, index (item.id)}
+            {@const needsAction = isAdjustmentRequired(item)}
+            {@const label = enforcementStateLabel(item)}
+            {@const hint = enforcementListHint(item)}
+            {@const time = enforcementTimeLabel(item)}
+            <li class="pp-health__item" class:pp-health__item--last={index === items.length - 1}>
+              <button
+                type="button"
+                class="pp-health__row"
+                onclick={() => void openDetails(item)}
+              >
+                <span class="pp-health__node" class:pp-health__node--action={needsAction} aria-hidden="true">
+                  {@html stateIcon(item)}
+                </span>
+                <span class="pp-health__item-body">
+                  <span class="pp-health__item-message">{enforcementListTitle(item)}</span>
+                  <span class="pp-health__item-meta">
+                    {#if time}<span class="pp-health__item-date">{time}</span>{/if}
+                    {#if label}
+                      <span
+                        class="pp-health__state"
+                        class:pp-health__state--revoked={item.isRevoked}
+                      >{label}</span>
+                    {/if}
+                  </span>
+                  {#if hint}
+                    <span class="pp-health__reason">
+                      <span class="pp-health__reason-label">Причина:</span>
+                      {hint}
+                    </span>
+                  {/if}
+                  {#if needsAction}
+                    <span class="pp-health__appeal">Принять действие</span>
+                  {/if}
+                </span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+        {#if hasMore}
+          <div class="pp-health__retry">
+            <UiV2Button
+              label={moreBusy ? 'Загрузка…' : 'Показать ещё'}
+              size="md"
+              variant="chrome"
+              disabled={moreBusy}
+              onclick={() => void loadMore()}
+            />
+          </div>
+        {/if}
+      {/if}
+    </div>
+  </section>
 </div>
 
 {#if infoOpen}
@@ -338,12 +391,14 @@
       class="pp-health-sheet__panel"
       transition:scale={{ duration: 220, start: 0.94, easing: cubicOut }}
     >
-      <h3 id="pp-health-info-title" class="pp-health-sheet__title">Здоровье аккаунта</h3>
-      <div class="pp-health-sheet__body">
-        {@html PROFILE_HEALTH_INFO_HTML}
-      </div>
+      <h3 id="pp-health-info-title" class="pp-health-sheet__title">Как это работает</h3>
+      <UiV2ScrollArea class="pp-health-sheet__scroll" padding="0 0.2rem 0 0">
+        <div class="pp-health-sheet__body">
+          {@html PROFILE_HEALTH_INFO_HTML}
+        </div>
+      </UiV2ScrollArea>
       <UiV2Button
-        label="Закрыть"
+        label="Понятно"
         size="lg"
         block
         variant="chrome"
@@ -373,28 +428,31 @@
       <h3 id="pp-health-detail-title" class="pp-health-sheet__title">
         {enforcementDetailTitle(detailItem)}
       </h3>
-      <div class="pp-health-sheet__body">
-        {#if detailLoading}
+      <UiV2ScrollArea class="pp-health-sheet__scroll" padding="0 0.2rem 0 0">
+        <div class="pp-health-sheet__body">
+          {#if detailLoading}
           <p>Загрузка…</p>
         {:else}
-          <p>{detail.lead}</p>
-          {#if detail.moderatorLabel && detail.moderatorMessage}
-            <p class="pp-health-sheet__content-label">{detail.moderatorLabel}</p>
-            <div class="pp-health-sheet__content">{@html formatEnforcementContentHtml(detail.moderatorMessage)}</div>
-          {/if}
-          {#if detail.contentLabel && detail.content}
-            <p class="pp-health-sheet__content-label">{detail.contentLabel}</p>
-            <div class="pp-health-sheet__content">{@html formatEnforcementContentHtml(detail.content)}</div>
-          {/if}
-          {#if !needsAction && detailItem.reason && !detail.moderatorMessage}
-            <p class="pp-health-sheet__reason">{detailItem.reason}</p>
+          <p class="pp-health-sheet__lead">{detail.lead}</p>
+          {#if detail.sections.length}
+            <div class="pp-health-sheet__sections">
+              {#each detail.sections as section}
+                <div class="pp-health-sheet__section">
+                  <span class="pp-health-sheet__section-label">{section.label}</span>
+                  <div class="pp-health-sheet__section-value">
+                    {@html formatEnforcementContentHtml(section.value)}
+                  </div>
+                </div>
+              {/each}
+            </div>
           {/if}
           <p class="pp-health-sheet__tip">
             Рекомендуем повторно ознакомиться с
             <a href={COMMENT_RULES_URL} onclick={openRules}>правилами сообщества</a>.
           </p>
         {/if}
-      </div>
+        </div>
+      </UiV2ScrollArea>
       {#if needsAction}
         <div class="pp-health-sheet__actions">
           <UiV2Button
@@ -428,14 +486,13 @@
   .pp-health {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.85rem;
     padding: 0.5rem 1.1rem 1.5rem;
     font-family: var(--uikit-v2-font, inherit);
     color: var(--uikit-v2-text, #fff);
   }
 
-  .pp-health__hint,
-  .pp-health__empty {
+  .pp-health__hint {
     margin: 1rem 0;
     color: var(--pp-fg-muted, var(--uiv2-fg-muted));
     font-size: 0.9rem;
@@ -451,195 +508,254 @@
     justify-content: center;
   }
 
+  /* ── Карточка состояния ───────────────────────────────────────── */
+
   .pp-health__card {
-    --pp-health-accent: #81c784;
-    --pp-health-counter-bg: #293b26;
-    --pp-health-fg: #e0e0e0;
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0;
-    padding: 1rem 1rem 1.15rem;
-    border-radius: 2rem;
-    border: none;
-    background: linear-gradient(225deg, #2a382a 0%, #213023 48%, #1e2e1f 100%);
+    padding: 1.25rem 1rem 1.1rem;
+    border-radius: 1.75rem;
+    background: var(--pp-surface, #1b1b1d);
     text-align: center;
   }
 
-  .pp-health__card--bad {
-    --pp-health-accent: #e57373;
-    --pp-health-counter-bg: color-mix(in srgb, #3e1515 88%, #000);
-    background: linear-gradient(225deg, #3e1515 0%, #302121 48%, #2e0c0c 100%);
+  .pp-health__help {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--pp-fg-soft, var(--uiv2-fg-soft));
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .pp-health__help:hover {
+    background: var(--uiv2-hover-bg, rgba(255, 255, 255, 0.08));
+  }
+
+  .pp-health__help:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--uikit-v2-accent, #8b7bd8) 60%, transparent);
+    outline-offset: 2px;
+  }
+
+  .pp-health__help-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1;
   }
 
   .pp-health__avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 6rem;
     height: 6rem;
     border-radius: 50%;
-    border: 2px solid color-mix(in srgb, #fff 10%, transparent);
-    background: var(--pp-surface, #1a1a1a) center / cover no-repeat;
+    background: #232326 center / cover no-repeat;
+    color: color-mix(in srgb, var(--uiv2-fg-soft, #fff) 40%, transparent);
+  }
+
+  .pp-health__avatar--empty {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .pp-health__status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    margin-top: 1.35rem;
   }
 
   .pp-health__title {
-    margin: 1.5rem 0 0;
-    font-size: 1.375rem;
+    margin: 0;
+    font-size: 1.5rem;
     font-weight: 700;
     line-height: 1.2;
-    color: var(--pp-health-fg);
+    color: var(--uiv2-fg-strong, #fff);
+  }
+
+  .pp-health__status-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    border-radius: 50%;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
+  }
+
+  .pp-health__status-icon--red {
+    background: #f25c5c;
+  }
+
+  .pp-health__status-icon--orange {
+    background: #e8a45c;
+  }
+
+  .pp-health__status-icon--green {
+    background: #5fbf72;
   }
 
   .pp-health__note {
-    margin: 0.125rem 0 0;
-    font-size: 0.875rem;
-    color: var(--pp-health-fg);
-  }
-
-  .pp-health__card--bad .pp-health__note {
-    color: var(--pp-health-fg);
-  }
-
-  .pp-health__stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.375rem;
-    width: calc(100% - 0.5rem);
+    margin: 0.4rem 0 0;
     max-width: 22rem;
-    margin-top: 1.5rem;
+    font-size: 0.95rem;
+    line-height: 1.35;
+    color: var(--pp-fg-soft, var(--uiv2-fg-soft));
   }
 
-  .pp-health__stat {
+  .pp-health__tiles {
     display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+    width: 100%;
+    margin-top: 1.35rem;
+  }
+
+  .pp-health__tile {
+    display: flex;
+    flex: 1;
     flex-direction: column;
     align-items: center;
-    gap: 0.125rem;
-    padding: 0.85rem 0.65rem 0.75rem;
+    justify-content: center;
+    gap: 0.15rem;
+    min-width: 0;
+    padding: 0.85rem 0.35rem 0.8rem;
     border-radius: 1rem;
-    background: var(--pp-health-counter-bg);
-    border: none;
+    background: rgba(255, 255, 255, 0.06);
   }
 
-  .pp-health__stat-num {
-    font-size: 1.375rem;
-    font-weight: 600;
-    line-height: 1.15;
-    color: var(--pp-health-accent);
+  .pp-health__tile-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--uiv2-fg-strong, #fff);
   }
 
-  .pp-health__card--bad .pp-health__stat-num {
-    color: var(--pp-health-accent);
+  .pp-health__tile-value--date {
+    font-size: 1.3rem;
+    white-space: nowrap;
   }
 
-  .pp-health__stat-label {
+  .pp-health__tile-label {
     font-size: 0.82rem;
-    font-weight: 500;
-    color: var(--pp-health-accent);
-  }
-
-  .pp-health__stat-sub {
-    font-size: 0.78rem;
-    color: var(--pp-health-accent);
-  }
-
-  .pp-health__card--bad .pp-health__stat-sub {
-    color: var(--pp-health-accent);
-  }
-
-  .pp-health__limits {
-    list-style: none;
-    margin: 1.5rem 0 0;
-    padding: 0;
-    width: min(100%, 18.75rem);
+    font-weight: 400;
+    color: var(--pp-fg-muted, var(--uiv2-fg-muted));
     text-align: center;
-    font-size: 0.875rem;
-    line-height: 1.4;
-    color: var(--pp-health-fg);
   }
 
-  .pp-health__limits li + li {
-    margin-top: 0.75rem;
-  }
-
-  .pp-health__last-ban {
-    font-weight: 600;
-  }
-
-  .pp-health__forbidden {
-    margin-top: 1rem;
-    width: min(100%, 18.75rem);
-    padding: 0.75rem 0.9rem;
-    border-radius: 0.75rem;
-    background: var(--pp-health-counter-bg);
-    font-size: 0.8125rem;
-    line-height: 1.4;
-    color: var(--pp-health-fg);
+  .pp-health__restriction {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    width: 100%;
+    margin-top: 0.6rem;
+    padding: 0.65rem 0.8rem;
+    border-radius: 0.9rem;
+    background: rgba(255, 255, 255, 0.045);
     text-align: left;
   }
 
-  .pp-health__forbidden-title {
-    margin: 0 0 0.4rem;
-    font-weight: 600;
-    color: var(--pp-health-accent);
+  .pp-health__restriction-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--pp-fg-soft, var(--uiv2-fg-soft));
+    flex-shrink: 0;
   }
 
-  .pp-health__forbidden-list {
-    list-style: disc;
+  .pp-health__restriction-body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .pp-health__restriction-title {
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--uiv2-fg-strong, #fff);
+  }
+
+  .pp-health__restriction-until {
+    font-size: 0.78rem;
+    color: var(--pp-fg-muted, var(--uiv2-fg-muted));
+  }
+
+  /* ── История модерации ────────────────────────────────────────── */
+
+  .pp-health__history {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    padding: 1rem 0.9rem 0.6rem;
+    border-radius: 1.75rem;
+    background: var(--pp-surface, #1b1b1d);
+  }
+
+  .pp-health__section {
     margin: 0;
-    padding-left: 1.1rem;
-  }
-
-  .pp-health__mean {
-    margin-top: 1.125rem;
-    padding: 0.55rem 0.85rem;
-    min-height: 2.4rem;
-    border: none;
-    border-radius: 0.5rem;
-    background: var(--pp-health-counter-bg);
-    color: var(--pp-health-accent);
-    font: inherit;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .pp-health__mean:hover {
-    filter: brightness(1.08);
-  }
-
-  .pp-health__mean:focus-visible {
-    outline: 2px solid var(--pp-health-accent);
-    outline-offset: 2px;
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--uiv2-fg-strong, #fff);
   }
 
   .pp-health__tabs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.55rem;
+    grid-template-columns: auto auto;
+    justify-content: start;
+    gap: 0.25rem;
+    padding: 0.3rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
   }
 
   .pp-health__tab {
-    min-height: 2.55rem;
-    padding: 0.55rem 0.85rem;
+    min-height: 2.5rem;
+    padding: 0.4rem 1.15rem;
+    border: 0;
     border-radius: 999px;
-    border: 1px solid var(--pp-border-strong, var(--uiv2-border-strong));
     background: transparent;
-    color: var(--pp-btn-fg, var(--uikit-v2-text));
+    color: var(--pp-fg-muted, var(--uiv2-fg-muted));
     font: inherit;
-    font-size: 0.86rem;
-    font-weight: 600;
+    font-size: 0.92rem;
+    font-weight: 500;
     cursor: pointer;
-  }
-
-  .pp-health__tab:hover {
-    background: var(--pp-surface-hover, var(--uiv2-hover-bg));
+    transition: background 0.15s ease, color 0.15s ease;
   }
 
   .pp-health__tab--on {
-    background: var(--pp-btn-bg, var(--uiv2-chrome-bg));
-    border-color: transparent;
+    background: color-mix(in srgb, #fff 16%, #2b2b30);
+    color: var(--uiv2-fg-strong, #fff);
   }
 
   .pp-health__tab:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--uikit-v2-accent, #e57373) 50%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--uikit-v2-accent, #8b7bd8) 60%, transparent);
     outline-offset: 2px;
   }
 
@@ -649,54 +765,161 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.95rem;
   }
 
   .pp-health__item {
+    position: relative;
+  }
+
+  .pp-health__item::before {
+    content: '';
+    position: absolute;
+    top: 2.95rem;
+    bottom: -0.3rem;
+    left: 1.66rem;
+    width: 2px;
+    border-radius: 1px;
+    background: color-mix(in srgb, var(--uiv2-fg-soft, #fff) 10%, transparent);
+  }
+
+  .pp-health__item--last::before {
+    display: none;
+  }
+
+  .pp-health__row {
     display: flex;
-    gap: 0.75rem;
-    align-items: flex-start;
+    gap: 0.8rem;
+    width: 100%;
+    padding: 0.55rem 0.6rem;
+    border: 0;
+    border-radius: 0.9rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease;
   }
 
-  .pp-health__item-icon {
+  .pp-health__row:hover {
+    background: var(--uiv2-hover-bg, rgba(255, 255, 255, 0.05));
+  }
+
+  .pp-health__row:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--uikit-v2-accent, #8b7bd8) 55%, transparent);
+    outline-offset: 2px;
+  }
+
+  .pp-health__node {
+    position: relative;
+    z-index: 1;
     flex: 0 0 auto;
-    display: grid;
-    place-items: center;
-    width: 2.25rem;
-    height: 2.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    margin-top: 0.1rem;
     border-radius: 50%;
-    background: var(--pp-surface, var(--uiv2-surface-subtle));
-    color: var(--pp-fg-soft, var(--uiv2-fg-soft));
+    background: #f25c5c;
+    color: #fff;
   }
 
-  .pp-health__item-icon--action {
-    background: color-mix(in srgb, #26a69a 28%, #1a1a1a);
-    color: #80cbc4;
+  .pp-health__node--action {
+    background: #3bb6a8;
   }
 
   .pp-health__item-body {
-    min-width: 0;
+    display: flex;
     flex: 1;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+    min-width: 0;
   }
 
-  .pp-health__item-title {
-    margin: 0;
-    font-size: 0.92rem;
-    font-weight: 600;
+  .pp-health__item-message {
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.3;
     color: var(--uiv2-fg-strong, #fff);
   }
 
-  .pp-health__item-time,
-  .pp-health__item-reason {
-    margin: 0.25rem 0 0;
-    font-size: 0.78rem;
-    color: var(--pp-fg-muted, var(--uiv2-fg-muted));
-    line-height: 1.35;
+  .pp-health__item-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.55rem;
   }
 
-  .pp-health__more-wrap {
-    margin-top: 0.5rem;
+  .pp-health__item-date {
+    font-size: 0.85rem;
+    color: var(--pp-fg-muted, var(--uiv2-fg-muted));
   }
+
+  .pp-health__state {
+    padding: 1px 0.5rem;
+    border-radius: 0.35rem;
+    background: color-mix(in srgb, #f25c5c 24%, transparent);
+    color: #ff9c9c;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  .pp-health__state--revoked {
+    background: color-mix(in srgb, var(--uiv2-fg-soft, #fff) 12%, transparent);
+    color: var(--pp-fg-muted, var(--uiv2-fg-muted));
+  }
+
+  .pp-health__reason {
+    display: block;
+    width: 100%;
+    margin-top: 0.45rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: 0.85rem;
+    background: rgba(255, 255, 255, 0.045);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: var(--uiv2-fg-strong, #fff);
+  }
+
+  .pp-health__reason-label {
+    color: var(--pp-fg-muted, var(--uiv2-fg-muted));
+  }
+
+  .pp-health__appeal {
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 0.6rem;
+    background: color-mix(in srgb, var(--uikit-v2-accent, #8b7bd8) 20%, transparent);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: color-mix(in srgb, var(--uikit-v2-accent, #8b7bd8) 60%, #fff);
+  }
+
+  .pp-health__empty-card {
+    padding: 1.5rem 1rem;
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.045);
+    text-align: center;
+  }
+
+  .pp-health__empty-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--uiv2-fg-strong, #fff);
+  }
+
+  .pp-health__empty-summary {
+    margin: 0.35rem 0 0;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    color: var(--pp-fg-muted, var(--uiv2-fg-muted));
+  }
+
+  /* ── Диалоги ──────────────────────────────────────────────────── */
 
   .pp-health-sheet__actions {
     display: grid;
@@ -725,9 +948,11 @@
   .pp-health-sheet__panel {
     position: relative;
     z-index: 1;
+    display: flex;
+    flex-direction: column;
     width: min(26rem, 100%);
     max-height: min(80vh, 40rem);
-    overflow: auto;
+    overflow: hidden;
     padding: 1.15rem;
     border-radius: 1rem;
     border: 1px solid var(--uiv2-panel-border, rgba(255, 255, 255, 0.08));
@@ -742,8 +967,13 @@
     font-weight: 700;
   }
 
+  .pp-health-sheet__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
   .pp-health-sheet__body {
-    margin-bottom: 1rem;
+    margin-bottom: 0.35rem;
     font-size: 0.9rem;
     line-height: 1.5;
     color: var(--uiv2-fg-soft, #d7d7db);
@@ -753,21 +983,62 @@
     margin: 0 0 0.65rem;
   }
 
-  .pp-health-sheet__body :global(ul) {
-    margin: 0 0 0.75rem;
-    padding-left: 1.15em;
-  }
-
   .pp-health-sheet__content-label {
     margin-top: 0.75rem !important;
     color: var(--uiv2-fg-muted, #aaa);
   }
 
+  .pp-health-sheet__lead {
+    margin: 0 0 0.85rem;
+    color: var(--uikit-v2-text, #fff);
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+
+  .pp-health-sheet__sections {
+    display: flex;
+    flex-direction: column;
+    border-radius: 0.8rem;
+    background: rgba(255, 255, 255, 0.045);
+    overflow: hidden;
+  }
+
+  .pp-health-sheet__section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem 0.75rem;
+  }
+
+  .pp-health-sheet__section + .pp-health-sheet__section {
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .pp-health-sheet__section-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--uiv2-fg-soft, #d7d7db) 55%, transparent);
+  }
+
+  .pp-health-sheet__section-value {
+    font-size: 0.88rem;
+    line-height: 1.45;
+    color: var(--uikit-v2-text, #fff);
+    overflow-wrap: anywhere;
+  }
+
+  .pp-health-sheet__section-value :global(a) {
+    color: var(--uikit-v2-accent, #8ab4f8);
+  }
+
   .pp-health-sheet__content {
+    margin-bottom: 0.6rem;
     font-weight: 600;
     color: var(--uikit-v2-text, #fff);
     line-height: 1.45;
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .pp-health-sheet__content :global(a) {
@@ -782,6 +1053,7 @@
 
   .pp-health-sheet__tip {
     margin-top: 0.75rem;
+    margin-bottom: 0.85rem;
     font-size: 0.82rem;
     color: var(--uiv2-fg-muted, #aaa);
   }

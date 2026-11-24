@@ -1,6 +1,7 @@
 ﻿<script lang="ts">
   import { onMount } from 'svelte';
   import { requireAuth } from '../../../stores/auth';
+  import { handleBanCode, handleBanError } from '../../../stores/ban-alert';
   import { resolveCdnAssetUrl } from '../../../utils/posterUrl';
   import { iconStar } from '../../../components/icons';
   import { notifyVotesChanged } from '../../../utils/favorites-events';
@@ -105,12 +106,14 @@
     if (!window.anixApi || busy || stars < 1 || stars > 5) return;
     busy = true;
     try {
-      await window.anixApi.release.vote(releaseId, stars);
+      const res = (await window.anixApi.release.vote(releaseId, stars)) as { code?: number } | undefined;
+      const code = Number(res?.code ?? 0);
+      if (code !== 0 && handleBanCode(code, 'votes')) return;
       notifyVotesChanged({ releaseId });
       picking = false;
       hoverStar = 0;
       await onRefresh();
-    } catch { /* ignore */ }
+    } catch (err) { handleBanError(err, 'votes'); }
     finally {
       busy = false;
     }
@@ -122,12 +125,14 @@
     if (!window.anixApi || busy || !hasYourVote) return;
     busy = true;
     try {
-      await window.anixApi.release.deleteVote(releaseId);
+      const delRes = (await window.anixApi.release.deleteVote(releaseId)) as { code?: number } | undefined;
+      const delCode = Number(delRes?.code ?? 0);
+      if (delCode !== 0 && handleBanCode(delCode, 'votes')) return;
       notifyVotesChanged({ releaseId });
       picking = true;
       hoverStar = 0;
       await onRefresh();
-    } catch { /* ignore */ }
+    } catch (err) { handleBanError(err, 'votes'); }
     finally {
       busy = false;
     }

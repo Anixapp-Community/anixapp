@@ -6,6 +6,7 @@
   import UiV2Button from '../uikit-v2/UiV2Button.svelte';
   import UiV2ScrollArea from '../uikit-v2/UiV2ScrollArea.svelte';
   import { showToast } from '../../stores/toast';
+  import { showBanAlert } from '../../stores/ban-alert';
   import {
     blogCreateApiErrorMessage,
     blogCreateProgressMarks,
@@ -137,6 +138,14 @@
       const res = await api.createBlog();
       const code = Number(res?.code ?? 0);
       if (code !== 0) {
+        if (code === 402) {
+          showBanAlert('blog');
+          return;
+        }
+        if (code === 403) {
+          showBanAlert('permanent');
+          return;
+        }
         const msg = blogCreateApiErrorMessage(code) || 'Не удалось улучшить профиль';
         showToast(msg, 'err');
         if (code === 2) {

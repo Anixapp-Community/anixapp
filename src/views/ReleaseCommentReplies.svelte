@@ -21,6 +21,7 @@
     commentAddErrorMessage,
   } from '../utils/comment';
   import { showToast } from '../stores/toast';
+  import { BanActionError, handleBanCode, handleBanError, isBanActionError } from '../stores/ban-alert';
   import { formatAnixError } from '../native/anix-errors';
   import { resolveJacksonRefs } from '../utils/jackson-refs';
   import {
@@ -175,7 +176,8 @@
       (prev.userVote ?? 0) as CommentVoteValue,
       (updated.userVote ?? 0) as CommentVoteValue,
     );
-    window.anixApi.comments.release.vote(id, apiVote).catch(() => {
+    window.anixApi.comments.release.vote(id, apiVote).catch((err) => {
+      handleBanError(err, 'votes');
       if (isParent) {
         parent = prev;
       } else {
@@ -229,7 +231,11 @@
         }),
       )) as { comment?: Record<string, unknown>; code?: number };
 
-      if (res.code != null && res.code !== 0) throw new Error(commentAddErrorMessage(Number(res.code)));
+      if (res.code != null && res.code !== 0) {
+        const code = Number(res.code);
+        if (handleBanCode(code, 'comments')) throw new BanActionError();
+        throw new Error(commentAddErrorMessage(code));
+      }
 
       if (res.comment) {
         const resolvedAdd = resolveJacksonRefs(res) as Record<string, unknown>;
@@ -248,6 +254,8 @@
         dockReplyLogin = null;
       }
     } catch (err) {
+      if (isBanActionError(err)) throw err;
+      if (handleBanError(err, 'comments')) throw new BanActionError();
       showToast(formatAnixError(err), 'err');
       throw err;
     } finally {

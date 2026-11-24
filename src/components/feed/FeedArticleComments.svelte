@@ -16,6 +16,7 @@
     apiVotePayload,
   } from '../../utils/comment';
   import { showToast } from '../../stores/toast';
+  import { BanActionError, handleBanCode, handleBanError, isBanActionError } from '../../stores/ban-alert';
   import { formatAnixError } from '../../native/anix-errors';
   import type { CommentVoteValue } from '../../types/comment';
   import {
@@ -152,7 +153,9 @@
         buildReleaseCommentAddBody(payload, { replyTarget }),
       )) as { code?: number; comment?: Record<string, unknown> };
       if (res.code != null && res.code !== 0) {
-        throw new Error(commentAddErrorMessage(Number(res.code)));
+        const code = Number(res.code);
+        if (handleBanCode(code, 'comments')) throw new BanActionError();
+        throw new Error(commentAddErrorMessage(code));
       }
       if (res.comment) {
         const resolved = resolveJacksonRefs(res) as Record<string, unknown>;
@@ -173,6 +176,8 @@
         onCountChange?.(knownTotal);
       }
     } catch (err) {
+      if (isBanActionError(err)) throw err;
+      if (handleBanError(err, 'comments')) throw new BanActionError();
       // Без этого композер очищается и кажется, что комментарий отправлен.
       showToast(formatAnixError(err), 'err');
       throw err;
@@ -219,7 +224,8 @@
       (prev.userVote ?? 0) as CommentVoteValue,
       (updated.userVote ?? 0) as CommentVoteValue,
     );
-    window.anixApi.article.commentVote(id, apiVote).catch(() => {
+    window.anixApi.article.commentVote(id, apiVote).catch((err) => {
+      handleBanError(err, 'votes');
       nodes = patchUiV2CommentNode(nodes, updated.id, {
         userVote: prev.userVote,
         voteCount: prev.voteCount,
@@ -246,7 +252,8 @@
         message: payload.message,
         isSpoiler: payload.isSpoiler,
       });
-    } catch {
+    } catch (err) {
+      handleBanError(err, 'comments');
       nodes = patchUiV2CommentNode(nodes, node.id, {
         message: prev.message,
         isSpoiler: prev.isSpoiler,
@@ -272,7 +279,8 @@
 
     try {
       await window.anixApi.article.commentDelete(id);
-    } catch {
+    } catch (err) {
+      handleBanError(err, 'comments');
       nodes = patchUiV2CommentNode(nodes, node.id, {
         isDeleted: prev.isDeleted,
         message: prev.message,

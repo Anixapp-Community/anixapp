@@ -13,6 +13,7 @@
   import UiV2Toggle from '../components/uikit-v2/UiV2Toggle.svelte';
   import { navigate } from '../stores/navigation';
   import { showToast } from '../stores/toast';
+  import { handleBanCode } from '../stores/ban-alert';
   import { compressImageForUpload } from '../utils/compressImage';
   import {
     COLLECTION_DESCRIPTION_MAX,
@@ -215,6 +216,7 @@
 
       const code = Number(res?.code ?? 0);
       if (code !== 0) {
+        if (handleBanCode(code, 'collections')) return;
         showToast(collectionSaveErrorMessage(code), 'err');
         return;
       }
@@ -241,6 +243,7 @@
             imageFileName ?? 'cover.jpg',
           )) as Record<string, unknown>;
           if (imgRes?.code != null && Number(imgRes.code) !== 0) {
+            if (handleBanCode(Number(imgRes.code), 'collections')) return;
             coverError = collectionSaveErrorMessage(Number(imgRes.code));
           }
         } catch (err) {

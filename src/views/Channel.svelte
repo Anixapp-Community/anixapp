@@ -18,6 +18,7 @@
   import { openProfilePanel } from '../stores/profile-panel';
   import { isAuthenticated, requireAuth } from '../stores/auth';
   import { showToast } from '../stores/toast';
+  import { handleBanError } from '../stores/ban-alert';
   import type { FeedArticle, FeedChannel } from '../types/feed';
   import {
     applyArticleVote,
@@ -314,8 +315,9 @@
     articles = articles.map((a) => (a.id === article.id ? applyArticleVote(a, nextVote) : a));
     try {
       await window.anixApi.article.vote(article.id, nextVote);
-    } catch {
+    } catch (err) {
       articles = articles.map((a) => (a.id === article.id ? applyArticleVote(a, prevVote) : a));
+      handleBanError(err, 'votes');
     }
   }
 

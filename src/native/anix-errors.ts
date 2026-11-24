@@ -1,4 +1,5 @@
 import { AnixApiError, AnixartError, HttpError } from 'anixapi';
+import { noteAccountBan } from '../stores/account-ban';
 
 const HTTP_LABELS: Record<number, string> = {
   400: 'Некорректный запрос',
@@ -60,6 +61,33 @@ function pathFromMessage(raw: string): string {
   return m?.[1] || '';
 }
 
+/** Код Anixart из текста ошибки IPC: "402", "402 (/path)", "code 402". */
+function codeFromRaw(raw: string): number | null {
+  const m = String(raw || '').match(/^(?:code\s*)?(\d{3})(?:\s*\(|\s*$)/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Код Anixart из ошибки: сначала поле code, потом текст (IPC теряет поля). */
+export function anixErrorCode(err: unknown): number | null {
+  const parsed = asErr(err);
+  if (!parsed) return null;
+  if (typeof parsed.code === 'number' && parsed.code > 0) return parsed.code;
+  const raw = unwrapIpcErrorMessage(parsed.message ? String(parsed.message) : String(err));
+  return codeFromRaw(raw);
+}
+
+/** Текст ошибки по коду Anixart — для сообщений в UI. */
+export function anixCodeMessage(code: number): string {
+  switch (code) {
+    case 401: return 'Нужна авторизация — войдите в аккаунт';
+    case 402: return 'Аккаунт заблокирован';
+    case 403: return 'Аккаунт заблокирован навсегда';
+    default: return '';
+  }
+}
+
 function isHttpLike(err: AnixErr, raw: string, orig: unknown): boolean {
   if (orig instanceof HttpError || err.name === 'HttpError') return true;
   return /\[AnixApi\]|HTTP \d{3}|HttpError|network error|empty response|invalid JSON|временно недоступен|не ответил|fetch failed/i.test(raw);
@@ -90,6 +118,14 @@ export function formatAnixError(err: unknown): string {
 
   if (name === 'TimeoutError') return 'Превышено время ожидания ответа сервера';
   if (name === 'AbortError') return 'Запрос отменён';
+
+  // IPC-ошибки приходят без полей: код остаётся только в тексте ("402").
+  const rawCode = typeof parsed.code === 'number' && parsed.code > 0 ? parsed.code : codeFromRaw(raw);
+  const rawCodeMessage = rawCode != null ? anixCodeMessage(rawCode) : '';
+  if (rawCodeMessage) {
+    if (rawCode === 402 || rawCode === 403) noteAccountBan(rawCode);
+    return rawCodeMessage;
+  }
 
   if (isAnixartLike(parsed, err)) {
     if (status === 401 || /token is required/i.test(raw)) {
@@ -138,6 +174,15 @@ export function formatAnixError(err: unknown): string {
 
 export function enrichAnixError(err: unknown): unknown {
   if (!err || typeof err !== 'object') return err;
+  // Сохраняем код для вызывающих: IPC-ошибка иначе приходит без code.
+  const code = anixErrorCode(err);
+  if (code != null && (err as { code?: number }).code == null) {
+    try {
+      Object.defineProperty(err, 'code', { value: code, writable: true, configurable: true, enumerable: false });
+    } catch {
+      (err as { code?: number }).code = code;
+    }
+  }
   const friendly = formatAnixError(err);
   const current = (err as { message?: string }).message;
   if (!friendly || current === friendly) return err;
@@ -160,7 +205,10 @@ export function attachAnixErrorMessages<T extends CallClient>(client: T): T {
     try {
       return await original(request);
     } catch (err) {
-      throw enrichAnixError(err);
+      const enriched = enrichAnixError(err);
+      const code = anixErrorCode(enriched);
+      if (code === 402 || code === 403) noteAccountBan(code);
+      throw enriched;
     }
   };
   return client;

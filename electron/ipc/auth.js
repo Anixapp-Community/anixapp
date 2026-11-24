@@ -729,21 +729,24 @@ ipcMain.handle('anix:oauthCancel', () => {
 
 loggedHandle('anix:logout', async () => {
   // То же, что «удалить из списка» для активного аккаунта
-  const activeId = Number(config.loadConfig().profileId) || 0;
+  const cfg = config.loadConfig();
+  const activeId = Number(cfg.profileId) || 0;
   if (!(activeId > 0)) {
     clearActiveSession();
     logger.info('auth', 'logout (no active)');
     return { switched: false, loggedOut: true };
   }
-  accountsStore.removeAccount(activeId);
+  const { baseUrl } = cfg;
+  // Замену выбираем до удаления, а сессию гасим до него же: иначе getAccounts()
+  // внутри removeAccount() мигрирует активный аккаунт обратно в список.
   const fallback = accountsStore.pickFallbackAccount(activeId);
-  const { baseUrl } = config.loadConfig();
+  clearActiveSession();
+  accountsStore.removeAccount(activeId);
   if (fallback) {
     activateSavedAccount(fallback, baseUrl);
     logger.info('auth', 'logout → switched to other account', { profileId: fallback.id });
     return { switched: true, profileId: fallback.id };
   }
-  clearActiveSession();
   logger.info('auth', 'logout');
   return { switched: false, loggedOut: true };
 });
@@ -771,18 +774,22 @@ loggedHandle('anix:switchAccount', async (_, profileId) => {
 loggedHandle('anix:removeAccount', async (_, profileId) => {
   const id = Number(profileId);
   if (!(id > 0)) return { success: false, error: 'bad_id' };
-  const wasActive = accountsStore.removeAccount(id);
+  const cfg = config.loadConfig();
+  const activeId = Number(cfg.profileId) || 0;
+  const { baseUrl } = cfg;
+  const wasActive = id === activeId;
+  // Замену — до удаления, сессию гасим до него: getAccounts() мигрирует активный аккаунт в список.
+  const fallback = wasActive ? accountsStore.pickFallbackAccount(id) : null;
+  if (wasActive) clearActiveSession();
+  accountsStore.removeAccount(id);
   if (!wasActive) {
     return { success: true, switched: false };
   }
-  const fallback = accountsStore.pickFallbackAccount(id);
-  const { baseUrl } = config.loadConfig();
   if (fallback) {
     activateSavedAccount(fallback, baseUrl);
     logger.info('auth', 'remove active account → switched', { profileId: fallback.id });
     return { success: true, switched: true, profileId: fallback.id };
   }
-  clearActiveSession();
   logger.info('auth', 'remove active account → logged out');
   return { success: true, switched: false, loggedOut: true };
 });

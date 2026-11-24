@@ -134,6 +134,8 @@
   import WatchModal from './components/WatchModal.svelte';
   import UiV2ExternalLinkConfirm from './components/uikit-v2/UiV2ExternalLinkConfirm.svelte';
   import Toast from './components/Toast.svelte';
+  import BanAlertDialog from './components/BanAlertDialog.svelte';
+  import ConfirmDialog from './components/ConfirmDialog.svelte';
   import TvDebugMetrics from './components/tv/TvDebugMetrics.svelte';
   import DevPagesPanel from './components/DevPagesPanel.svelte';
 
@@ -1255,6 +1257,8 @@
 {/if}
 
 <Toast />
+<BanAlertDialog />
+<ConfirmDialog />
 {#if devPagesOpen && !isTvMode()}
   <DevPagesPanel currentPath={path} onClose={() => (devPagesOpen = false)} />
 {/if}

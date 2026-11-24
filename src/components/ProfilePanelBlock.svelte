@@ -10,6 +10,7 @@
     iconBan,
     iconPlus,
     iconChevronDown,
+    iconUser,
   } from './icons';
   import { get } from 'svelte/store';
   import {
@@ -54,6 +55,7 @@
   import UiV2Button from './uikit-v2/UiV2Button.svelte';
   import UiV2RoundButton from './uikit-v2/UiV2RoundButton.svelte';
   import { showToast } from '../stores/toast';
+  import { accountBan, isAccountBanActive } from '../stores/account-ban';
   import type { FeedChannel } from '../types/feed';
   import { requireAuth } from '../stores/auth';
   import { fetchMyBadges, fetchUsersBadges, getCachedBadges, cacheBadges, visibleAppBadges, type AppBadge } from '../services/badges-api';
@@ -204,8 +206,20 @@
   const showPrivacy = $derived(
     profile && !blockedByUser ? hasProfilePrivacyRestrictions(profile, isMyProfile) : false,
   );
+  /** Если сервер уже ответил 402/403, а в профиле флагов нет — показываем бан из общего состояния. */
+  const serverBanNotice = $derived.by(() => {
+    if (!isMyProfile) return null;
+    const state = $accountBan;
+    if (!isAccountBanActive(state)) return null;
+    return getSelfBanNotice({
+      is_banned: true,
+      is_perm_banned: state.permanent,
+      ban_expires: state.expires || null,
+      ban_reason: state.reason || null,
+    });
+  });
   const banNotice = $derived(
-    isMyProfile ? getSelfBanNotice(profile) : getProfileBanNotice(profile),
+    (isMyProfile ? getSelfBanNotice(profile) : getProfileBanNotice(profile)) ?? serverBanNotice,
   );
   const friendNamesPreview = $derived.by(() => {
     const names = friends
@@ -779,10 +793,10 @@
                       ><AnimatedMediaOverlay src={avatarAnimation} /></button>
                     {:else}
                       <div
-                        class="profile-panel__avatar"
+                        class="profile-panel__avatar profile-panel__avatar--empty"
                         role="img"
                         aria-label={login}
-                      ></div>
+                      >{@html iconUser(36)}</div>
                     {/if}
                     <span
                       class="profile-panel__online"

@@ -2,6 +2,7 @@
   import { navigate } from '../../stores/navigation';
   import { handleUserProfileClick } from '../../stores/user-profile';
   import { requireAuth } from '../../stores/auth';
+  import { handleBanError } from '../../stores/ban-alert';
   import UiV2CommentThread, {
     type UiV2CommentNode,
   } from '../uikit-v2/UiV2CommentThread.svelte';
@@ -58,7 +59,8 @@
     votes = { ...votes, [id]: { userVote: nextVote, voteCount: updated.voteCount } };
     try {
       await commentsApi.vote(id, apiVotePayload(prevVote, nextVote));
-    } catch {
+    } catch (err) {
+      handleBanError(err, 'votes');
       votes = { ...votes, [id]: { userVote: prevVote, voteCount: prev.voteCount } };
     }
   }

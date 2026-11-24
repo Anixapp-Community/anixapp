@@ -129,7 +129,11 @@
 
   &--placeholder,
   &--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: $color-border;
+    color: color-mix(in srgb, $color-text 32%, transparent);
   }
 }
 
@@ -496,6 +500,7 @@
   min-width: 0;
   font-size: 0.85rem;
   font-weight: 500;
+  white-space: pre-line;
 }
 
 .profile__ban-more {
