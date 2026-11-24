@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick, untrack } from 'svelte';
+  import { get } from 'svelte/store';
   import Page from './Page.svelte';
   import { settingsModalInitialTab, settingsModalLastTab, settingsBossFightLock } from '../stores/modals';
   import AccountPage from '../views/Settings/pages/AccountPage.svelte';
@@ -13,8 +14,7 @@
   import UpdatePage from '../views/Settings/pages/UpdatePage.svelte';
   import DebugPage from '../views/Settings/pages/DebugPage.svelte';
   import DeveloperPage from '../views/Settings/pages/DeveloperPage.svelte';
-  import UiV2Button from './uikit-v2/UiV2Button.svelte';
-  import UiV2PillField from './uikit-v2/UiV2PillField.svelte';
+  import UiV2BackBar from './uikit-v2/UiV2BackBar.svelte';
   import UiV2RoundButton from './uikit-v2/UiV2RoundButton.svelte';
   import SidebarPanelResizeHandle from './SidebarPanelResizeHandle.svelte';
   import {
@@ -33,7 +33,7 @@
     iconMessageCircle,
     iconLink,
     iconInfo,
-    iconSearch,
+    iconChevronRight,
     iconUser,
   } from './icons';
   import { navigate } from '../stores/navigation';
@@ -126,19 +126,16 @@
     { title: 'Профиль', rows: [{ tab: 'account', title: 'Учётная запись', sub: 'Никнейм, статус, социальные сети и приватность', icon: iconUser }] },
     ...(isDev ? [{ title: 'Разработчик', rows: [{ tab: 'developer', title: 'Разработчик', sub: 'Мосты и UI Kit', icon: iconCodeXml }] }] : []),
   ];
-  const deferred = new Set<SettingsTab>(['connection', 'update', 'debug', 'developer', 'account']);
-  const anchors = new Map<string, HTMLElement>();
-  let indexedText = $state<Partial<Record<SettingsTab, string>>>({});
-  let expanded = $state<Partial<Record<SettingsTab, boolean>>>({});
-  let query = $state('');
-  let current = $state('appearance');
-  let feed: HTMLElement;
-  const rows = groups.flatMap((group) => group.rows);
-  const searchTerms = $derived(normalizeSearch(query).split(/\s+/).filter(Boolean));
-  const matches = $derived(rows.filter((row) => {
-    const text = normalizeSearch([row.title, row.sub, row.tab && indexedText[row.tab]].filter(Boolean).join(' '));
-    return searchTerms.every((term) => text.includes(term));
-  }));
+  const sections = groups.flatMap((group) => group.rows);
+  function resolveTab(value: string | null): SettingsTab | 'menu' {
+    return sections.find((row) => row.tab === value)?.tab ?? 'menu';
+  }
+
+  let screen = $state<SettingsTab | 'menu'>(resolveTab(get(settingsModalInitialTab)));
+  let view: HTMLElement;
+  let menuScrollTop = 0;
+  const currentSection = $derived(sections.find((row) => row.tab === screen));
+  const backSegments = $derived([{ label: currentSection?.title ?? 'Настройки', active: true }]);
 
   let sheetOpen = $state(false);
   let closing = $state(false);
@@ -155,67 +152,28 @@
     return unsub;
   });
 
-  function normalizeSearch(text: string) {
-    return text.toLowerCase().replaceAll('ё', 'е').trim();
-  }
-
-  function registerSection(node: HTMLElement, row: MenuRow) {
-    anchors.set(row.title, node);
-    const tab = row.tab;
-    const index = () => {
-      if (tab) indexedText[tab] = node.textContent ?? '';
-    };
-    const observer = tab && tab !== 'debug' ? new MutationObserver(index) : null;
-    if (observer) {
-      index();
-      observer.observe(node, { subtree: true, childList: true, characterData: true });
-    }
-    return { destroy() { observer?.disconnect(); anchors.delete(row.title); } };
-  }
-
-  async function openSection(row: MenuRow) {
-    if (bossLocked) return;
-    if (!row.tab) {
-      row.action?.();
-      return;
-    }
-    query = '';
-    if (deferred.has(row.tab)) expanded[row.tab] = true;
-    current = row.tab;
+  async function showScreen(next: SettingsTab | 'menu') {
+    if (bossLocked || screen === next) return;
+    const viewport = view?.closest<HTMLElement>('[data-page-scroll]');
+    if (screen === 'menu') menuScrollTop = viewport?.scrollTop ?? 0;
+    const previous = screen;
+    screen = next;
     await tick();
-    const anchor = anchors.get(row.title);
-    const viewport = feed?.parentElement;
-    if (anchor && viewport) {
-      viewport.scrollTop += anchor.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
-      anchor.focus({ preventScroll: true });
+    if (screen !== next || !viewport) return;
+    viewport.scrollTop = next === 'menu' ? menuScrollTop : 0;
+    if (next === 'menu') {
+      view.querySelector<HTMLButtonElement>(`[data-settings-tab="${previous}"]`)?.focus({ preventScroll: true });
     }
   }
 
-  function followScroll() {
-    const viewport = feed?.parentElement;
-    if (!viewport || query || bossLocked) return;
-    const top = viewport.getBoundingClientRect().top + 24;
-    for (const row of rows) {
-      if (!row.tab) continue;
-      const anchor = anchors.get(row.title);
-      if (anchor && anchor.getBoundingClientRect().bottom > top) {
-        current = row.tab;
-        break;
-      }
-    }
+  function onHeadBack() {
+    if (screen === 'menu') close();
+    else void showScreen('menu');
   }
 
   $effect(() => {
-    const tab = $settingsModalInitialTab;
-    const row = tab ? rows.find((item) => item.tab === tab) : undefined;
-    if (row) untrack(() => void openSection(row));
-  });
-
-  $effect(() => {
-    if (searchTerms.length || bossLocked) {
-      const viewport = feed?.parentElement;
-      if (viewport) viewport.scrollTop = 0;
-    }
+    const tab = resolveTab($settingsModalInitialTab);
+    if (tab !== 'menu') untrack(() => void showScreen(tab));
   });
 
   function close() {
@@ -244,8 +202,6 @@
   }
 
   onMount(() => {
-    const viewport = feed?.parentElement;
-    viewport?.addEventListener('scroll', followScroll, { passive: true });
     if (standalone) {
       document.addEventListener('keydown', handleKeydown);
       window.addEventListener('anix:settingsPanelRequestClose', close);
@@ -272,11 +228,10 @@
         if (v) appVersion = `AnixApp v${v}`;
       }).catch(() => {});
     }
-    return () => viewport?.removeEventListener('scroll', followScroll);
   });
 
   onDestroy(() => {
-    settingsModalLastTab.set(current);
+    if (screen !== 'menu') settingsModalLastTab.set(screen);
     document.removeEventListener('keydown', handleKeydown);
     window.removeEventListener('anix:settingsPanelRequestClose', close);
     if (closeTimer != null) clearTimeout(closeTimer);
@@ -285,101 +240,62 @@
 
 {#snippet panelBody()}
   <div
-    class="profile-panel settings-workspace settings-design"
+    class="profile-panel settings-design"
     class:profile-panel--boss-lock={bossLocked}
     role="dialog"
     aria-modal="true"
     aria-label="Настройки приложения"
   >
-    <header class="settings-workspace__header" aria-hidden={bossLocked}>
-      <h2>Настройки</h2>
-      <UiV2RoundButton label="Закрыть" onclick={close} disabled={bossLocked}>
-        {@html iconX(18)}
-      </UiV2RoundButton>
+    <header class="profile-panel__chrome" inert={bossLocked}>
+      <div class="profile-panel__close">
+        <UiV2RoundButton label="Закрыть" onclick={close} disabled={bossLocked}>
+          {@html iconX(18)}
+        </UiV2RoundButton>
+      </div>
     </header>
-    <div class="settings-workspace__body">
-      <nav class="settings-workspace__nav" aria-label="Разделы настроек" inert={bossLocked}>
-        {#each groups as group (group.title)}
-          <div class="settings-workspace__nav-group">
-            <p>{group.title}</p>
-            {#each group.rows as row (row.title)}
-              {#if row.tab}
+
+    <Page scrollId="settings-panel" extraClass="profile-panel__page" noPadding>
+      <div class="profile-panel__edit-view" bind:this={view}>
+        <header class="profile-panel__friends-head" inert={bossLocked}>
+          <UiV2BackBar segments={backSegments} onBack={onHeadBack} />
+        </header>
+
+        {#if screen === 'menu'}
+          <nav class="profile-panel__edit-menu settings-menu" aria-label="Разделы настроек">
+            {#each groups as group, index (group.title)}
+              {#if index > 0}<div class="profile-panel__edit-divider" aria-hidden="true"></div>{/if}
+              <h3 class="settings-menu__group">{group.title}</h3>
+              {#each group.rows as row (row.title)}
                 <button
                   type="button"
-                  class="settings-workspace__nav-item"
-                  aria-current={current === row.tab ? 'location' : undefined}
-                  onclick={() => openSection(row)}
+                  class="settings-menu__row"
+                  data-settings-tab={row.tab}
+                  onclick={() => row.tab ? showScreen(row.tab) : row.action?.()}
                 >
-                  <span aria-hidden="true">{@html row.icon(17)}</span>
-                  {row.title}
+                  <span class="settings-menu__icon" aria-hidden="true">{@html row.icon(20)}</span>
+                  <span class="settings-menu__text">
+                    <span class="settings-menu__title">{row.title}</span>
+                    {#if row.tab === 'about' || row.sub}
+                      <span class="settings-menu__sub">{row.tab === 'about' ? appVersion : row.sub}</span>
+                    {/if}
+                  </span>
+                  <span class="settings-menu__chevron" aria-hidden="true">{@html iconChevronRight(16)}</span>
                 </button>
-              {/if}
+              {/each}
             {/each}
+          </nav>
+          <footer class="settings-panel__meta">
+            <span>{appVersion}</span>
+            {#if componentsLine}<p class="settings-panel__meta-components">{componentsLine}</p>{/if}
+          </footer>
+        {:else}
+          {@const Content = pages[screen]}
+          <div class="settings-panel__page" class:settings-panel__page--fill={screen === 'debug'}>
+            <Content />
           </div>
-        {/each}
-      </nav>
-      <div class="settings-workspace__main">
-        <div class="settings-workspace__search" inert={bossLocked}>
-          <UiV2PillField label="Поиск по настройкам" type="search" bind:value={query} spellcheck={false}>
-            {#snippet icon()}{@html iconSearch(17)}{/snippet}
-          </UiV2PillField>
-          {#if query}
-            <UiV2RoundButton size="sm" label="Очистить поиск" onclick={() => (query = '')}>
-              {@html iconX(16)}
-            </UiV2RoundButton>
-          {/if}
-        </div>
-        <Page scrollId="settings-panel" extraClass="profile-panel__page settings-workspace__page" noPadding>
-          <div class="settings-workspace__feed" bind:this={feed}>
-            {#each rows as row (row.title)}
-              {#if row.tab}
-                {@const tab = row.tab}
-                {@const Content = pages[tab]}
-                <section
-                  class="settings-workspace__section"
-                  hidden={bossLocked ? tab !== 'update' : !matches.includes(row)}
-                  tabindex="-1"
-                  aria-label={row.title}
-                  use:registerSection={row}
-                >
-                  <h3>{@html row.icon(19)} {row.title}</h3>
-                  {#if !deferred.has(tab) || expanded[tab]}
-                    <div class="settings-panel__page" class:settings-panel__page--fill={tab === 'debug'}>
-                      <Content />
-                    </div>
-                  {:else}
-                    <div class="uiv2-settings__group uiv2-settings__group--pad">
-                      {#if row.sub}<p class="uiv2-settings__desc">{row.sub}</p>{/if}
-                      <div><UiV2Button label="Открыть раздел" onclick={() => openSection(row)} /></div>
-                    </div>
-                  {/if}
-                </section>
-              {/if}
-            {/each}
-            {#if !bossLocked && matches.some((row) => !row.tab)}
-              <section class="settings-workspace__section">
-                <h3>Быстрые действия</h3>
-                <div class="settings-workspace__actions">
-                  {#each matches.filter((row) => !row.tab) as row (row.title)}
-                    <UiV2Button label={row.title} onclick={() => openSection(row)}>
-                      {#snippet icon()}{@html row.icon(16)}{/snippet}
-                    </UiV2Button>
-                  {/each}
-                </div>
-              </section>
-            {:else if !bossLocked && matches.length === 0}
-              <p class="uiv2-settings__status" role="status">Ничего не найдено</p>
-            {/if}
-            {#if !bossLocked && !searchTerms.length}
-              <footer class="settings-panel__meta">
-                <span>{appVersion}</span>
-                {#if componentsLine}<p class="settings-panel__meta-components">{componentsLine}</p>{/if}
-              </footer>
-            {/if}
-          </div>
-        </Page>
+        {/if}
       </div>
-    </div>
+    </Page>
   </div>
 {/snippet}
 
@@ -421,189 +337,3 @@
 {:else}
   {@render panelBody()}
 {/if}
-
-<style>
-  .settings-workspace {
-    container: settings-workspace / inline-size;
-    background: var(--uikit-v2-bg);
-    color: var(--uikit-v2-text);
-    font-family: var(--uikit-v2-font, inherit);
-  }
-
-  .settings-workspace__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.7rem 1rem;
-    border-bottom: 1px solid var(--uiv2-border-subtle);
-  }
-
-  .settings-workspace__header h2 {
-    margin: 0;
-    font-size: 1.125rem;
-  }
-
-  .settings-workspace__body {
-    display: grid;
-    grid-template-columns: 11rem minmax(0, 1fr);
-    flex: 1;
-    min-height: 0;
-  }
-
-  .settings-workspace__nav {
-    overflow: auto;
-    padding: 0.65rem;
-    border-inline-end: 1px solid var(--uiv2-border-subtle);
-    background: var(--uiv2-surface-subtle);
-  }
-
-  .settings-workspace__nav-group + .settings-workspace__nav-group {
-    margin-top: 0.85rem;
-  }
-
-  .settings-workspace__nav-group p {
-    margin: 0.35rem 0.6rem;
-    color: var(--uiv2-fg-muted);
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .settings-workspace__nav-item {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    width: 100%;
-    padding: 0.55rem 0.6rem;
-    border: 0;
-    border-radius: 0.65rem;
-    background: transparent;
-    color: var(--uiv2-fg-muted);
-    text-align: start;
-    font: inherit;
-    font-size: 0.8125rem;
-    cursor: pointer;
-  }
-
-  .settings-workspace__nav-item span {
-    display: flex;
-    flex-shrink: 0;
-  }
-
-  .settings-workspace__nav-item:hover {
-    background: var(--uiv2-hover-bg);
-    color: var(--uikit-v2-text);
-  }
-
-  .settings-workspace__nav-item[aria-current] {
-    background: var(--uiv2-chrome-active-bg);
-    color: var(--uiv2-chrome-active-fg);
-  }
-
-  .settings-workspace__nav-item:focus-visible,
-  .settings-workspace__section:focus-visible {
-    outline: 2px solid var(--uikit-v2-accent);
-    outline-offset: -2px;
-  }
-
-  .settings-workspace__main {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-  }
-
-  .settings-workspace__main :global(.settings-workspace__page) {
-    flex: 1;
-  }
-
-  .settings-workspace__search {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.65rem 1rem;
-    border-bottom: 1px solid var(--uiv2-border-subtle);
-  }
-
-  .settings-workspace__search :global(.uiv2-pill-field) {
-    flex: 1;
-    min-width: 0;
-    width: auto;
-  }
-
-  .settings-workspace__feed {
-    display: grid;
-    gap: 1.35rem;
-    padding: 0.85rem 1rem 1.25rem;
-  }
-
-  .settings-workspace__section {
-    min-width: 0;
-    padding-bottom: 1.15rem;
-    border-bottom: 1px solid var(--uiv2-border-subtle);
-  }
-
-  .settings-workspace__section h3 {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    margin: 0 0 0.9rem;
-    color: var(--uikit-v2-text);
-    font-size: 1rem;
-    font-weight: 700;
-  }
-
-  .settings-workspace__section > .settings-panel__page,
-  .settings-workspace__feed > .settings-panel__meta {
-    padding: 0;
-  }
-
-  .settings-workspace__section > .settings-panel__page--fill {
-    height: min(55vh, 32rem);
-  }
-
-  .settings-workspace__actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .profile-panel--boss-lock .settings-workspace__nav,
-  .profile-panel--boss-lock .settings-workspace__search,
-  .profile-panel--boss-lock .settings-workspace__header {
-    display: none;
-  }
-
-  .profile-panel--boss-lock .settings-workspace__body {
-    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
-  }
-
-  @container settings-workspace (max-width: 34rem) {
-    .settings-workspace__body {
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto minmax(0, 1fr);
-    }
-
-    .settings-workspace__nav {
-      display: flex;
-      gap: 0.35rem;
-      border-inline-end: 0;
-      border-bottom: 1px solid var(--uiv2-border-subtle);
-    }
-
-    .settings-workspace__nav-group {
-      display: flex;
-    }
-
-    .settings-workspace__nav-group + .settings-workspace__nav-group {
-      margin-top: 0;
-    }
-
-    .settings-workspace__nav-group p {
-      display: none;
-    }
-
-    .settings-workspace__nav-item {
-      white-space: nowrap;
-    }
-  }
-</style>
