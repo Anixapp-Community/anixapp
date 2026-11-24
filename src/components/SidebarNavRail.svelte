@@ -146,6 +146,8 @@
           class:uiv2-sidenav__tab--downloads={item.href === '/downloads'}
           class:uiv2-sidenav__tab--guest={item.href === '/bookmarks' && !$isAuthenticated}
           aria-label={news ? `${item.label}: ${news}` : item.beta ? `${item.label} (beta)` : item.label}
+          data-nav-item={item.id}
+          draggable="true"
           aria-current={on ? 'page' : undefined}
           onclick={(e) => goTo(item, e)}
         >
@@ -160,6 +162,7 @@
       <div
         class="uiv2-sidenav__folder"
         class:uiv2-sidenav__folder--open={expanded}
+        data-nav-folder={entry.id}
         onmouseenter={() => openFolder(entry.id)}
         onmouseleave={() => closeFolder(entry.id)}
         onfocusin={() => openFolder(entry.id)}
@@ -172,7 +175,7 @@
             class="uiv2-sidenav__tip uiv2-sidenav__tip--face"
           >
             <!-- Фиксированный слот: коллаж ↔ иконка папки без схлопывания hitbox -->
-            <div class="uiv2-sidenav__face">
+            <div class="uiv2-sidenav__face" data-nav-folder-handle={entry.id} draggable="true">
               <button
                 type="button"
                 class="uiv2-sidenav__pack"
@@ -241,6 +244,8 @@
                       class:uiv2-sidenav__tab--guest={child.href === '/bookmarks' && !$isAuthenticated}
                       tabindex={expanded ? 0 : -1}
                       aria-label={child.beta ? `${child.label} (beta)` : child.label}
+                      data-nav-item={child.id}
+                      draggable="true"
                       aria-current={childOn ? 'page' : undefined}
                       onclick={(e) => goTo(child, e)}
                     >
@@ -249,7 +254,7 @@
                   </UiV2Tooltip>
                 </div>
               {:else}
-                <span class="uiv2-sidenav__folder-empty" title="Пусто — добавьте вкладки в настройках"></span>
+                <span class="uiv2-sidenav__folder-empty" title="Перетащите вкладку в папку"></span>
               {/each}
             </div>
           </div>

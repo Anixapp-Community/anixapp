@@ -3,11 +3,13 @@
 
   interface Props {
     initialName: string;
+    title?: string;
+    placeholder?: string;
     onSave: (name: string) => void;
     onClose: () => void;
   }
 
-  let { initialName, onSave, onClose }: Props = $props();
+  let { initialName, title = 'Переименовать вкладку', placeholder = 'Моя вкладка', onSave, onClose }: Props = $props();
   let name = $state(untrack(() => initialName));
 
   function apply() {
@@ -20,7 +22,7 @@
 
   <div class="home-filter-modal__panel home-tab-rename-modal">
     <header class="home-filter-modal__head">
-      <h2 id="home-rename-tab-title" class="home-filter-modal__title">Переименовать вкладку</h2>
+      <h2 id="home-rename-tab-title" class="home-filter-modal__title">{title}</h2>
       <button type="button" class="home-filter-modal__close" aria-label="Закрыть" onclick={onClose}>×</button>
     </header>
 
@@ -32,7 +34,11 @@
         class="home-tab-rename-modal__input"
         bind:value={name}
         maxlength="32"
-        placeholder="Моя вкладка"
+        {placeholder}
+        onkeydown={(event) => {
+          if (event.key === 'Enter' && !event.isComposing) apply();
+          if (event.key === 'Escape') onClose();
+        }}
       />
     </div>
 

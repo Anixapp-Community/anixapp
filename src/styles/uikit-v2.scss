@@ -3419,15 +3419,15 @@
     box-shadow 0.22s ease,
     background 0.22s ease;
 
-  .uiv2-select:not(.uiv2-select--disabled):hover & {
+  .uiv2-select:not(.uiv2-select--disabled):not(:where(.uiv2-select--row)):hover & {
     border-color: color-mix(in srgb, var(--uikit-v2-text) 62%, transparent);
-    background: var(--uiv2-hover-subtle);
+    background: var(--settings-control-bg, var(--uiv2-hover-subtle));
   }
 
-  .uiv2-select--open & {
+  .uiv2-select--open:not(:where(.uiv2-select--row)) & {
     border-color: color-mix(in srgb, var(--uikit-v2-text) 82%, transparent);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--uikit-v2-text) 12%, transparent);
-    background: color-mix(in srgb, var(--uikit-v2-text) 3%, transparent);
+    background: var(--settings-control-bg, color-mix(in srgb, var(--uikit-v2-text) 3%, transparent));
   }
 }
 
@@ -12152,8 +12152,10 @@ $uiv2-comment-thread: color-mix(in srgb, var(--uikit-v2-text) 16%, transparent);
   list-style: none;
   user-select: none;
 
-  &:hover {
-    background: var(--uiv2-hover-bg);
+  @media (hover: hover) {
+    &:hover {
+      background: color-mix(in srgb, var(--uikit-v2-text) 6%, var(--uiv2-card-bg));
+    }
   }
 
   &:focus-visible {
@@ -12314,7 +12316,7 @@ $uiv2-comment-thread: color-mix(in srgb, var(--uikit-v2-text) 16%, transparent);
     align-items: center;
 
     &:hover:not(:disabled) {
-      background: var(--uiv2-hover-bg);
+      background-image: linear-gradient(var(--uiv2-hover-bg), var(--uiv2-hover-bg));
     }
 
     &:focus-visible {
@@ -12455,13 +12457,6 @@ $uiv2-comment-thread: color-mix(in srgb, var(--uikit-v2-text) 16%, transparent);
   }
 }
 
-.notif-test-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
 
 .notif-sound {
   display: flex;
@@ -13819,7 +13814,7 @@ html:not(.mobile-mode) .release-filter .uiv2-menu-sheet__handle {
 
   &:not(.uiv2-select--disabled):hover .uiv2-select__field {
     border-color: var(--settings-row-border);
-    background: var(--uiv2-hover-bg);
+    background-image: linear-gradient(var(--uiv2-hover-bg), var(--uiv2-hover-bg));
   }
 
   &.uiv2-select--open,
@@ -14006,7 +14001,7 @@ html:not(.mobile-mode) .release-filter .uiv2-menu-sheet__handle {
   text-align: start;
 
   &:hover {
-    background: var(--uiv2-hover-bg);
+    background-image: linear-gradient(var(--uiv2-hover-bg), var(--uiv2-hover-bg));
   }
 
   &:focus-within,

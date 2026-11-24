@@ -22,7 +22,6 @@
   import UiV2Button from '../../../components/uikit-v2/UiV2Button.svelte';
   import UiV2SettingsRow from '../../../components/uikit-v2/UiV2SettingsRow.svelte';
   import UiV2ZoomScaleSlider from '../../../components/uikit-v2/UiV2ZoomScaleSlider.svelte';
-  import NavigationSettingsSection from '../../../components/settings/NavigationSettingsSection.svelte';
   import { DEFAULT_ZOOM, normalizeZoom, type ZoomLevel } from '../../../utils/zoom';
   import { isMac } from '../../../utils/platform';
   import { isMobileMode, MOBILE_UI_SCALES, getMobileUiScale, setMobileUiScale } from '../../../platform/mobile';
@@ -190,8 +189,5 @@
         <p class="uiv2-settings__status">Загрузка…</p>
       {/if}
     </section>
-
-    <!-- Боковая панель и миниатюры есть только у ПК; на телефоне разделы переставляют долгим нажатием на панели -->
-    <NavigationSettingsSection />
   {/if}
 </div>

@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { openSettingsModal } from '../../../../stores/modals';
   import { fmtRelative, getProfileBanNotice, getSelfBanNotice, isLottieBadgeUrl, posterUrl } from '../../_utils';
-  import { openProfileHealthPanel } from '../../../../stores/profile-panel';
+  import { openProfileHealthPanel, openProfilePanel, profilePanelPendingEditScreen } from '../../../../stores/profile-panel';
   import { fetchCdnJson, toCdnProxyUrl } from '../../../../utils/posterUrl';
   import { iconBan, iconUser } from '../../../../components/icons';
   import AppBadges from '../../../../components/AppBadges.svelte';
@@ -162,7 +161,10 @@
           <button
             type="button"
             class="profile__friend-btn profile__friend-btn--add"
-            onclick={() => openSettingsModal('account')}
+            onclick={() => {
+              profilePanelPendingEditScreen.set('menu');
+              openProfilePanel(Number(profile.id));
+            }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>

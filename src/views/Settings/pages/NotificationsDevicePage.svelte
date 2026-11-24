@@ -2,7 +2,6 @@
   import { onDestroy, onMount } from 'svelte';
   import { isMobileMode } from '../../../platform/mobile';
   import UiV2SettingsToggle from '../../../components/uikit-v2/UiV2SettingsToggle.svelte';
-  import UiV2SettingsRow from '../../../components/uikit-v2/UiV2SettingsRow.svelte';
   import UiV2SettingsSlider from '../../../components/uikit-v2/UiV2SettingsSlider.svelte';
   import UiV2Button from '../../../components/uikit-v2/UiV2Button.svelte';
   import UiV2Select, { type UiV2SelectOption } from '../../../components/uikit-v2/UiV2Select.svelte';
@@ -110,6 +109,7 @@
   );
 
   function testKind(kind: NotificationKindId) {
+    if (!canDeliver) return;
     // Звук только через канал доставки: ОС — системный, баннеры — мелодия приложения.
     void sendTestDeviceNotification(kind);
   }
@@ -170,7 +170,7 @@
     <section class="uiv2-settings__block">
       <h3 class="uiv2-settings__title">Главное</h3>
       <p class="uiv2-settings__desc">
-        {touchOnly ? 'Уведомления в шторке Android и проверка' : 'Включение, звук и проверка на этом устройстве'}
+        {touchOnly ? 'Уведомления в шторке Android' : 'Уведомления на этом устройстве'}
       </p>
       <div class="uiv2-settings__group">
         <UiV2SettingsToggle
@@ -197,29 +197,22 @@
         />
         {/if}
 
-        <UiV2SettingsRow
-          title="Проверить"
-          desc={canDeliver
-            ? 'Прислать тестовое уведомление о серии или значке'
-            : 'Включите системные уведомления или карточки приложения'}
-        >
-          <div class="notif-test-actions">
-            <UiV2Button
-              label="Серия"
-              variant="primary"
-              size="sm"
-              disabled={!canDeliver}
+        <details class="notif-advanced">
+          <summary class="notif-advanced__summary">
+            <span class="notif-advanced__title">Тестовое уведомление</span>
+            {#if !canDeliver}
+              <span class="notif-advanced__hint">Включите доставку уведомлений на этом устройстве</span>
+            {/if}
+          </summary>
+          <div class="notif-advanced__body notif-test-actions">
+            <UiV2Button label="Отправить пример новой серии" block disabled={!canDeliver}
               onclick={() => testKind('episode')}
             />
-            <UiV2Button
-              label="Значок"
-              variant="chrome"
-              size="sm"
-              disabled={!canDeliver}
+            <UiV2Button label="Отправить пример нового значка" block disabled={!canDeliver}
               onclick={() => testKind('achievement')}
             />
           </div>
-        </UiV2SettingsRow>
+        </details>
       </div>
 
       {#if !touchOnly}

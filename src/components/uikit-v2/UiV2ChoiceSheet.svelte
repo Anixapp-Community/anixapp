@@ -17,8 +17,9 @@
     title: string;
     /** Пояснение под заголовком. */
     summary?: string;
-    options: UiV2ChoiceOption[];
-    value: string | number;
+    options?: UiV2ChoiceOption[];
+    value?: string | number;
+    content?: import('svelte').Snippet;
     cancelLabel?: string;
     disabled?: boolean;
     onSelect?: (value: string | number) => void;
@@ -30,8 +31,9 @@
   let {
     title,
     summary = '',
-    options,
+    options = [],
     value,
+    content,
     cancelLabel = 'Отмена',
     disabled = false,
     onSelect,
@@ -74,32 +76,36 @@
     <h3 id={titleId} class="uiv2-choice-sheet__title">{title}</h3>
     {#if summary}<p class="uiv2-choice-sheet__summary">{summary}</p>{/if}
 
-    <ul class="uiv2-choice-sheet__list" role="listbox" aria-label={title}>
-      {#each options as opt (opt.value)}
-        <li>
-          <button
-            type="button"
-            class="uiv2-choice-sheet__option"
-            class:uiv2-choice-sheet__option--on={value === opt.value}
-            role="option"
-            aria-selected={value === opt.value}
-            {disabled}
-            onclick={() => onSelect?.(opt.value)}
-          >
-            <span class="uiv2-choice-sheet__radio" aria-hidden="true"></span>
-            <span class="uiv2-choice-sheet__body">
-              <span class="uiv2-choice-sheet__label">{opt.label}</span>
-              {#if opt.description}
-                <span class="uiv2-choice-sheet__description">{opt.description}</span>
-              {/if}
-              {#if opt.warning}
-                <span class="uiv2-choice-sheet__warning">{opt.warning}</span>
-              {/if}
-            </span>
-          </button>
-        </li>
-      {/each}
-    </ul>
+    {#if content}
+      {@render content()}
+    {:else if options.length}
+      <ul class="uiv2-choice-sheet__list" role="listbox" aria-label={title}>
+        {#each options as opt (opt.value)}
+          <li>
+            <button
+              type="button"
+              class="uiv2-choice-sheet__option"
+              class:uiv2-choice-sheet__option--on={value === opt.value}
+              role="option"
+              aria-selected={value === opt.value}
+              {disabled}
+              onclick={() => onSelect?.(opt.value)}
+            >
+              <span class="uiv2-choice-sheet__radio" aria-hidden="true"></span>
+              <span class="uiv2-choice-sheet__body">
+                <span class="uiv2-choice-sheet__label">{opt.label}</span>
+                {#if opt.description}
+                  <span class="uiv2-choice-sheet__description">{opt.description}</span>
+                {/if}
+                {#if opt.warning}
+                  <span class="uiv2-choice-sheet__warning">{opt.warning}</span>
+                {/if}
+              </span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
 
     {#if footer}
       <div class="uiv2-choice-sheet__footer">{@render footer()}</div>

@@ -3,7 +3,6 @@
   import { get } from 'svelte/store';
   import Page from './Page.svelte';
   import { settingsModalInitialTab, settingsModalLastTab, settingsBossFightLock } from '../stores/modals';
-  import AccountPage from '../views/Settings/pages/AccountPage.svelte';
   import AppearancePage from '../views/Settings/pages/AppearancePage.svelte';
   import ConnectionPage from '../views/Settings/pages/ConnectionPage.svelte';
   import BehaviorPage from '../views/Settings/pages/BehaviorPage.svelte';
@@ -34,7 +33,6 @@
     iconLink,
     iconInfo,
     iconChevronRight,
-    iconUser,
   } from './icons';
   import { navigate } from '../stores/navigation';
   import { openSupportModal } from '../stores/support-promo';
@@ -52,7 +50,6 @@
   const { onClose, standalone = false, flushTop = false }: Props = $props();
 
   export type SettingsTab =
-    | 'account'
     | 'appearance'
     | 'connection'
     | 'behavior'
@@ -65,7 +62,6 @@
     | 'about';
 
   const pages = {
-    account: AccountPage,
     appearance: AppearancePage,
     connection: ConnectionPage,
     behavior: BehaviorPage,
@@ -123,7 +119,6 @@
   const PANEL_ANIM_MS = 340;
   const groups: { title: string; rows: MenuRow[] }[] = [
     ...MENU_GROUPS,
-    { title: 'Профиль', rows: [{ tab: 'account', title: 'Учётная запись', sub: 'Никнейм, статус, социальные сети и приватность', icon: iconUser }] },
     ...(isDev ? [{ title: 'Разработчик', rows: [{ tab: 'developer', title: 'Разработчик', sub: 'Мосты и UI Kit', icon: iconCodeXml }] }] : []),
   ];
   const sections = groups.flatMap((group) => group.rows);

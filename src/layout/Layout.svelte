@@ -21,6 +21,7 @@
   import SettingsModal from '../components/SettingsModal.svelte';
   import SidebarPanelResizeHandle from '../components/SidebarPanelResizeHandle.svelte';
   import SidebarPins from '../components/SidebarPins.svelte';
+  import SidebarNavigation, { type SidebarDrag } from '../components/SidebarNavigation.svelte';
   import SidebarNavRail from '../components/SidebarNavRail.svelte';
   import Page from '../components/Page.svelte';
   import UiV2Tooltip from '../components/uikit-v2/UiV2Tooltip.svelte';
@@ -70,6 +71,7 @@
   let rightNavEntries = $state<SidebarNavRailEntry[]>(getSidebarNavEntriesForSide('right'));
   let pinsPlacement = $state<SidebarPinsPlacement>(getSidebarPinsPlacement());
   let navChromeSide = $state<'left' | 'right'>(getSidebarNavChromeSide());
+  let draggingNavigation = $state<SidebarDrag | null>(null);
   const showLeftSidebar = $derived(leftNavEntries.length > 0 || pinsPlacement === 'left');
   const showRightSidebar = $derived(rightNavEntries.length > 0 || pinsPlacement === 'right');
 
@@ -693,9 +695,9 @@
   <LobbyNowWatching />
 
   <div class="layout__body">
-    {#if showLeftSidebar}
+    {#if showLeftSidebar || draggingNavigation}
       <div class="sidebar-column">
-        <aside class="sidebar">
+        <SidebarNavigation side="left" bind:dragging={draggingNavigation}>
           <SidebarNavRail
             entries={leftNavEntries}
             {currentPath}
@@ -708,12 +710,13 @@
           {#if navChromeSide === 'left'}
             {@render sidebarChrome('left')}
           {/if}
-        </aside>
+        </SidebarNavigation>
       </div>
     {/if}
 
     <main class="layout__main">
-      <div class="content-panel" class:content-panel--with-right={showRightSidebar}>
+      <div class="content-panel" class:content-panel--with-right={showRightSidebar}
+        class:content-panel--without-left={!showLeftSidebar && !draggingNavigation}>
         <div class="content-panel__body">
           <Page scrollId="content" extraClass={pageExtraClass} noPadding={isFeedPage || isAgentPage}>
             {@render children?.()}
@@ -722,9 +725,9 @@
       </div>
     </main>
 
-    {#if showRightSidebar}
+    {#if showRightSidebar || draggingNavigation}
       <div class="sidebar-column sidebar-column--right">
-        <aside class="sidebar">
+        <SidebarNavigation side="right" bind:dragging={draggingNavigation}>
           <SidebarNavRail
             entries={rightNavEntries}
             {currentPath}
@@ -739,7 +742,7 @@
           {#if navChromeSide === 'right'}
             {@render sidebarChrome('right')}
           {/if}
-        </aside>
+        </SidebarNavigation>
       </div>
     {/if}
   </div>

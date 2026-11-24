@@ -244,27 +244,27 @@
         <span class="m-switch" class:m-switch--on={playerPrefs.ask} aria-hidden="true"></span>
       </button>
       <!-- Адаптивное ускорение и видеокарта (на ПК — в «Поведении»): от них зависит Anime4K -->
-      <div class="m-settings__desktop"><BehaviorPage embedded /></div>
+      <div class="m-settings__desktop settings-design"><BehaviorPage embedded /></div>
       <h2 class="m-pref-cat">Встроенный плеер</h2>
-      <div class="m-settings__desktop"><PlaybackPage /></div>
+      <div class="m-settings__desktop settings-design"><PlaybackPage /></div>
 
     {:else if screen === 'appearance'}
-      <div class="m-settings__desktop"><AppearancePage /></div>
+      <div class="m-settings__desktop settings-design"><AppearancePage /></div>
 
     {:else if screen === 'notifications'}
-      <div class="m-settings__desktop"><NotificationsDevicePage /></div>
+      <div class="m-settings__desktop settings-design"><NotificationsDevicePage /></div>
     {:else if screen === 'connection'}
-      <div class="m-settings__desktop"><ConnectionPage /></div>
+      <div class="m-settings__desktop settings-design"><ConnectionPage /></div>
     {:else if screen === 'update'}
       <MobileUpdatePage />
     {:else if screen === 'developer'}
-      <div class="m-settings__desktop"><DeveloperPage /></div>
+      <div class="m-settings__desktop settings-design"><DeveloperPage /></div>
     {:else if screen === 'qr'}
       <MobileQrSignIn />
     {:else if screen === 'support'}
       <MobileSupport />
     {:else}
-      <div class="m-settings__desktop"><AboutPage /></div>
+      <div class="m-settings__desktop settings-design"><AboutPage /></div>
     {/if}
   </div>
 
