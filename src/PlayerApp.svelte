@@ -77,12 +77,14 @@
       </svg>
     </button>
     </UiV2Tooltip>
-    <button
-      type="button"
-      class="player-titlebar__btn player-titlebar__btn--close"
-      aria-label="Закрыть"
-      onclick={() => window.electron?.closePlayerWindow?.()}
-    ></button>
+    <UiV2Tooltip text="Закрыть" placement="bottom" showDelay={80}>
+      <button
+        type="button"
+        class="player-titlebar__btn player-titlebar__btn--close"
+        aria-label="Закрыть"
+        onclick={() => window.electron?.closePlayerWindow?.()}
+      ></button>
+    </UiV2Tooltip>
   </div>
 </div>
 

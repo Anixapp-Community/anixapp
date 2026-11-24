@@ -78,6 +78,7 @@
 
   function dubItem(dub: DubberItem): UiV2PopupMenuItem {
     const pinned = dub.pinned === true;
+    const track = isSub(dub) ? 'субтитры' : 'озвучку';
     return {
       id: `dub:${dub.id}`,
       label: dubLabel(dub),
@@ -87,7 +88,7 @@
       // Не закрывать сразу: при недоступной озвучке остаёмся в меню + OSD
       keepOpen: true,
       trailingIcon: ontogglePin ? iconPin(14) : (pinned ? iconPin(14) : undefined),
-      trailingLabel: pinned ? 'Открепить озвучку' : 'Закрепить озвучку',
+      trailingLabel: `${pinned ? 'Открепить' : 'Закрепить'} ${track}`,
       trailingActive: pinned,
     };
   }
@@ -126,7 +127,7 @@
     if (next.length === 0) {
       return [{
         id: 'empty',
-        label: localOnly ? 'Нет локальных файлов' : 'Озвучки не найдены',
+        label: localOnly ? 'Нет локальных файлов' : 'Озвучки и субтитры не найдены',
         disabled: true,
       }];
     }
@@ -161,7 +162,7 @@
   loadingRows={8}
   title="Выбор"
   searchable={!loading && (dubbers.length > 8 || localDubbers.length > 6)}
-  searchPlaceholder="Озвучка…"
+  searchPlaceholder={localOnly ? 'Поиск по скачанным…' : 'Поиск озвучек и субтитров…'}
   emptyLabel="Нет результатов"
   wide
   placement="anchor"

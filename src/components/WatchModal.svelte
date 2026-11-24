@@ -1519,6 +1519,7 @@
                   {@const epLabel = dubberEpisodeLabel(d)}
                   {@const qualityLabel = formatDubberQuality(d.quality)}
                   {@const pinned = d.pinned === true}
+                  {@const pinLabel = `${pinned ? 'Открепить' : 'Закрепить'} ${isSubDubber(d) ? 'субтитры' : 'озвучку'}`}
                   {@const isNew = isDubberNovelty(d.id, lastEpisodeTypeUpdateId)}
                   <div
                     class="watch-modal__variant-row"
@@ -1529,7 +1530,7 @@
                     data-dubber-id={d.id}
                     use:tvLongPress={isTv ? () => void togglePinDubber(d) : null}
                     use:touchLongPress={isMobile ? () => void togglePinDubber(d) : null}
-                    data-tv-longpress-hint={pinned ? 'Открепить озвучку' : 'Закрепить озвучку'}
+                    data-tv-longpress-hint={pinLabel}
                     onclick={() => openDubber(d)}
                     onkeydown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
@@ -1547,8 +1548,8 @@
                       type="button"
                       class="watch-modal__variant-pin"
                       class:watch-modal__variant-pin--active={pinned}
-                      aria-label={pinned ? 'Открепить озвучку' : 'Закрепить озвучку'}
-                      title={pinned ? 'Открепить' : 'Закрепить'}
+                      aria-label={pinLabel}
+                      title={pinLabel}
                       disabled={pinningId === d.id}
                       onclick={(e) => void togglePinDubber(d, e)}
                     >
