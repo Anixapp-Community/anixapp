@@ -67,8 +67,43 @@ function rewritePlaylist(text, base) {
   }).join('\n');
 }
 
+const STREAM_CONNECT_TIMEOUT_MS = 15000;
+
+function normalizeAcceptRanges(value) {
+  if (!value) return 'bytes';
+  return /\bbytes\b/i.test(value) ? 'bytes' : value;
+}
+
+function buildStreamResponseHeaders(upstreamHeaders, status) {
+  const out = new Headers({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges, Content-Type',
+  });
+  for (const name of ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges']) {
+    const value = upstreamHeaders.get(name);
+    if (value) out.set(name, name === 'Accept-Ranges' ? normalizeAcceptRanges(value) : value);
+  }
+  if (!out.has('Accept-Ranges') && (status === 206 || (status >= 200 && status < 300))) {
+    out.set('Accept-Ranges', 'bytes');
+  }
+  return out;
+}
+
 function setupSourceStreamProtocol() {
   protocol.handle(SCHEME, async (request) => {
+    const controller = new AbortController();
+    const connectTimer = setTimeout(
+      () => controller.abort(new DOMException('Connect timeout', 'TimeoutError')),
+      STREAM_CONNECT_TIMEOUT_MS,
+    );
+    const onAbort = () => controller.abort(request.signal?.reason);
+    if (request.signal) {
+      if (request.signal.aborted) {
+        clearTimeout(connectTimer);
+        return new Response(null, { status: 499 });
+      }
+      request.signal.addEventListener('abort', onAbort, { once: true });
+    }
     try {
       if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, { status: 405 });
       const url = new URL(request.url.replace(/^anix-stream:/, 'https:'));
@@ -76,31 +111,36 @@ function setupSourceStreamProtocol() {
       const headers = {};
       const range = request.headers.get('Range');
       if (range) headers.Range = range;
-      const response = await fetchSourceStream(url, { headers, method: request.method, signal: AbortSignal.timeout(15000) });
-      const out = new Headers({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges',
-      });
-      for (const name of ['Content-Type', 'Content-Range', 'Accept-Ranges']) {
-        const value = response.headers.get(name);
-        if (value) out.set(name, value);
-      }
+      const response = await fetchSourceStream(url, { headers, method: request.method, signal: controller.signal });
+      clearTimeout(connectTimer);
+      const out = buildStreamResponseHeaders(response.headers, response.status);
       if (response.ok && request.method === 'GET' && url.pathname.endsWith('.m3u8')) {
         out.set('Content-Type', 'application/vnd.apple.mpegurl');
+        out.delete('Content-Length');
         return new Response(rewritePlaylist(await response.text(), url.href), { headers: out });
       }
       if (response.ok && request.method === 'GET'
         && (url.pathname.endsWith('.mpd') || out.get('Content-Type')?.includes('application/dash+xml'))) {
         out.set('Content-Type', 'application/dash+xml');
+        out.delete('Content-Length');
         const text = (await response.text()).replace(/https:\/\/([a-z0-9.-]+)(?=\/)/gi,
           (absolute, host) => getSourceOrigin(host.toLowerCase()) ? SCHEME + '://' + host : absolute);
         return new Response(text, { headers: out });
       }
-      return new Response(response.body, { status: response.status, headers: out });
+      const body = request.method === 'HEAD' ? null : response.body;
+      return new Response(body, { status: response.status, headers: out });
     } catch {
       return new Response(null, { status: 502 });
+    } finally {
+      clearTimeout(connectTimer);
     }
   });
 }
 
-module.exports = { registerSourceStreamScheme, setupSourceStreamProtocol, sourceStreamUrl, fetchSourceStream };
+module.exports = {
+  registerSourceStreamScheme,
+  setupSourceStreamProtocol,
+  sourceStreamUrl,
+  fetchSourceStream,
+  buildStreamResponseHeaders,
+};

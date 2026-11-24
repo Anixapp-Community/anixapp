@@ -368,4 +368,20 @@ describe('AnimeLib custom source integration', () => {
     assert.equal(ep10.episode.url, 'https://video1.cdnlibs.org/.%D0%B0s/uploads/ep_10_1080.mp4');
     assert.equal(detailFetches.includes(5010), true);
   });
+
+  it('forwards Content-Length and normalized Accept-Ranges on anix-stream:// progressive responses', () => {
+    const { buildStreamResponseHeaders } = require('../source-stream-protocol');
+    const upstreamHeaders = new Headers({
+      'content-type': 'video/mp4',
+      'content-length': '485292971',
+      'content-range': 'bytes 0-485292970/485292971',
+      'accept-ranges': 'bytes, bytes',
+    });
+    const out = buildStreamResponseHeaders(upstreamHeaders, 206);
+    assert.equal(out.get('content-type'), 'video/mp4');
+    assert.equal(out.get('content-length'), '485292971');
+    assert.equal(out.get('content-range'), 'bytes 0-485292970/485292971');
+    assert.equal(out.get('accept-ranges'), 'bytes');
+    assert.match(out.get('access-control-expose-headers') || '', /Content-Length/);
+  });
 });
