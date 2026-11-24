@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import UiV2RoundButton from './uikit-v2/UiV2RoundButton.svelte';
-  import UiV2Toggle from './uikit-v2/UiV2Toggle.svelte';
+  import UiV2SettingsToggle from './uikit-v2/UiV2SettingsToggle.svelte';
+  import UiV2Select from './uikit-v2/UiV2Select.svelte';
   import NotificationCheckboxDialog from './NotificationCheckboxDialog.svelte';
   import ReleaseEpisodeNotifyModal from './ReleaseEpisodeNotifyModal.svelte';
   import {
@@ -10,7 +11,6 @@
     iconChevronRight,
     iconList,
     iconListChecks,
-    iconLayoutGrid,
   } from './icons';
   import {
     NOTIFICATION_LIST_STATUSES,
@@ -391,58 +391,31 @@
 
     <section class="notifications-modal__pref-section">
       <h3 class="notifications-modal__pref-section-title">Уведомления о сериях</h3>
-      <div class="notifications-modal__pref-row">
-        <div class="notifications-modal__pref-text">
-          <span class="notifications-modal__pref-label">Получать уведомления</span>
-          <span class="notifications-modal__pref-hint">О выходе новых серий</span>
-        </div>
-        <UiV2Toggle
-          label="Получать уведомления о сериях"
-          checked={prefs.is_episode_notifications_enabled}
-          disabled={prefBusy}
-          onChange={() => { void toggleBoolPref('is_episode_notifications_enabled'); }}
-        />
-      </div>
+      <UiV2SettingsToggle
+        label="Получать уведомления"
+        description="О выходе новых серий"
+        checked={prefs.is_episode_notifications_enabled}
+        disabled={prefBusy}
+        onChange={() => { void toggleBoolPref('is_episode_notifications_enabled'); }}
+      />
 
       {#if prefs.is_episode_notifications_enabled}
-        <div class="notifications-modal__scope-cards" role="radiogroup" aria-label="Источник уведомлений о сериях">
-          <button
-            type="button"
-            class="notifications-modal__scope-card"
-            class:notifications-modal__scope-card--on={scopeMode === 'allLists'}
-            role="radio"
-            aria-checked={scopeMode === 'allLists'}
-            disabled={prefBusy}
-            onclick={() => { void selectAllListsMode(); }}
-          >
-            <span class="notifications-modal__scope-icon">{@html iconList(28)}</span>
-            <span class="notifications-modal__scope-label">Из всех моих списков</span>
-          </button>
-          <button
-            type="button"
-            class="notifications-modal__scope-card"
-            class:notifications-modal__scope-card--on={scopeMode === 'selectedLists'}
-            role="radio"
-            aria-checked={scopeMode === 'selectedLists'}
-            disabled={prefBusy}
-            onclick={() => { void selectSelectedListsMode(); }}
-          >
-            <span class="notifications-modal__scope-icon">{@html iconList(28)}</span>
-            <span class="notifications-modal__scope-label">Из выбранных списков</span>
-          </button>
-          <button
-            type="button"
-            class="notifications-modal__scope-card"
-            class:notifications-modal__scope-card--on={scopeMode === 'selectedReleases'}
-            role="radio"
-            aria-checked={scopeMode === 'selectedReleases'}
-            disabled={prefBusy}
-            onclick={() => { void selectSelectedReleasesMode(); }}
-          >
-            <span class="notifications-modal__scope-icon">{@html iconLayoutGrid(28)}</span>
-            <span class="notifications-modal__scope-label">По выбранным релизам</span>
-          </button>
-        </div>
+        <UiV2Select
+          appearance="row"
+          label="Источник уведомлений о сериях"
+          value={scopeMode}
+          disabled={prefBusy}
+          options={[
+            { value: 'allLists', label: 'Из всех моих списков' },
+            { value: 'selectedLists', label: 'Из выбранных списков' },
+            { value: 'selectedReleases', label: 'По выбранным релизам' },
+          ]}
+          onChange={(value) => {
+            if (value === 'allLists') void selectAllListsMode();
+            else if (value === 'selectedLists') void selectSelectedListsMode();
+            else if (value === 'selectedReleases') void selectSelectedReleasesMode();
+          }}
+        />
 
         {#if scopeMode === 'selectedReleases'}
           <button
@@ -487,108 +460,73 @@
             </div>
             <span class="notifications-modal__pref-chevron">{@html iconChevronRight(16)}</span>
           </button>
-          <div class="notifications-modal__pref-row">
-            <div class="notifications-modal__pref-text">
-              <span class="notifications-modal__pref-label">Первая серия</span>
-              <span class="notifications-modal__pref-hint">Отдельно о старте тайтла</span>
-            </div>
-            <UiV2Toggle
-              label="Первая серия"
-              checked={prefs.is_first_episode_notification_enabled}
-              disabled={prefBusy}
-              onChange={() => { void toggleBoolPref('is_first_episode_notification_enabled'); }}
-            />
-          </div>
+          <UiV2SettingsToggle
+            label="Первая серия"
+            description="Отдельно о старте тайтла"
+            checked={prefs.is_first_episode_notification_enabled}
+            disabled={prefBusy}
+            onChange={() => { void toggleBoolPref('is_first_episode_notification_enabled'); }}
+          />
         {/if}
       {/if}
     </section>
 
     <section class="notifications-modal__pref-section">
       <h3 class="notifications-modal__pref-section-title">Уведомления о новых релизах</h3>
-      <div class="notifications-modal__pref-row">
-        <div class="notifications-modal__pref-text">
-          <span class="notifications-modal__pref-label">Получать уведомления</span>
-          <span class="notifications-modal__pref-hint">Если в приложении был добавлен связанный релиз, который находится у вас в закладках</span>
-        </div>
-        <UiV2Toggle
-          label="Связанные релизы"
-          checked={prefs.is_related_release_notifications_enabled}
-          disabled={prefBusy}
-          onChange={() => { void toggleBoolPref('is_related_release_notifications_enabled'); }}
-        />
-      </div>
+      <UiV2SettingsToggle
+        label="Получать уведомления"
+        description="Если в приложении был добавлен связанный релиз, который находится у вас в закладках"
+        checked={prefs.is_related_release_notifications_enabled}
+        disabled={prefBusy}
+        onChange={() => { void toggleBoolPref('is_related_release_notifications_enabled'); }}
+      />
     </section>
 
     <section class="notifications-modal__pref-section">
       <h3 class="notifications-modal__pref-section-title">Уведомления о новых записях</h3>
-      <div class="notifications-modal__pref-row">
-        <div class="notifications-modal__pref-text">
-          <span class="notifications-modal__pref-label">Получать уведомления</span>
-          <span class="notifications-modal__pref-hint">Если в блоге или канале, на который Вы подписаны, опубликовали новую запись</span>
-        </div>
-        <UiV2Toggle
-          label="Записи каналов"
-          checked={prefs.is_article_notifications_enabled}
-          disabled={prefBusy}
-          onChange={() => { void toggleBoolPref('is_article_notifications_enabled'); }}
-        />
-      </div>
+      <UiV2SettingsToggle
+        label="Получать уведомления"
+        description="Если в блоге или канале, на который Вы подписаны, опубликовали новую запись"
+        checked={prefs.is_article_notifications_enabled}
+        disabled={prefBusy}
+        onChange={() => { void toggleBoolPref('is_article_notifications_enabled'); }}
+      />
     </section>
 
     <section class="notifications-modal__pref-section">
       <h3 class="notifications-modal__pref-section-title">Уведомления о комментариях</h3>
-      <div class="notifications-modal__pref-row">
-        <div class="notifications-modal__pref-text">
-          <span class="notifications-modal__pref-label">Уведомления об ответах</span>
-          <span class="notifications-modal__pref-hint">Если кто-то отвечает на Ваши комментарии</span>
-        </div>
-        <UiV2Toggle
-          label="Ответы на комментарии"
-          checked={prefs.is_comment_notifications_enabled}
-          disabled={prefBusy}
-          onChange={() => { void toggleBoolPref('is_comment_notifications_enabled'); }}
-        />
-      </div>
-      <div class="notifications-modal__pref-row">
-        <div class="notifications-modal__pref-text">
-          <span class="notifications-modal__pref-label">Уведомления о комментариях своих коллекций</span>
-          <span class="notifications-modal__pref-hint">Если кто-то комментирует Ваши коллекции</span>
-        </div>
-        <UiV2Toggle
-          label="Комментарии коллекций"
-          checked={prefs.is_my_collection_comment_notifications_enabled}
-          disabled={prefBusy}
-          onChange={() => { void toggleBoolPref('is_my_collection_comment_notifications_enabled'); }}
-        />
-      </div>
-      <div class="notifications-modal__pref-row">
-        <div class="notifications-modal__pref-text">
-          <span class="notifications-modal__pref-label">Уведомления о комментариях своих записей в блоге</span>
-          <span class="notifications-modal__pref-hint">Если кто-то комментирует записи в Вашем блоге</span>
-        </div>
-        <UiV2Toggle
-          label="Комментарии записей"
-          checked={prefs.is_my_article_comment_notifications_enabled}
-          disabled={prefBusy}
-          onChange={() => { void toggleBoolPref('is_my_article_comment_notifications_enabled'); }}
-        />
-      </div>
+      <UiV2SettingsToggle
+        label="Уведомления об ответах"
+        description="Если кто-то отвечает на Ваши комментарии"
+        checked={prefs.is_comment_notifications_enabled}
+        disabled={prefBusy}
+        onChange={() => { void toggleBoolPref('is_comment_notifications_enabled'); }}
+      />
+      <UiV2SettingsToggle
+        label="Уведомления о комментариях своих коллекций"
+        description="Если кто-то комментирует Ваши коллекции"
+        checked={prefs.is_my_collection_comment_notifications_enabled}
+        disabled={prefBusy}
+        onChange={() => { void toggleBoolPref('is_my_collection_comment_notifications_enabled'); }}
+      />
+      <UiV2SettingsToggle
+        label="Уведомления о комментариях своих записей в блоге"
+        description="Если кто-то комментирует записи в Вашем блоге"
+        checked={prefs.is_my_article_comment_notifications_enabled}
+        disabled={prefBusy}
+        onChange={() => { void toggleBoolPref('is_my_article_comment_notifications_enabled'); }}
+      />
     </section>
 
     <section class="notifications-modal__pref-section">
       <h3 class="notifications-modal__pref-section-title">Уведомления о жалобах</h3>
-      <div class="notifications-modal__pref-row">
-        <div class="notifications-modal__pref-text">
-          <span class="notifications-modal__pref-label">Получать Push-уведомления</span>
-          <span class="notifications-modal__pref-hint">Если отправленная вами жалоба была обработана модератором</span>
-        </div>
-        <UiV2Toggle
-          label="Жалобы"
-          checked={prefs.is_report_process_notifications_enabled}
-          disabled={prefBusy}
-          onChange={() => { void toggleBoolPref('is_report_process_notifications_enabled'); }}
-        />
-      </div>
+      <UiV2SettingsToggle
+        label="Получать Push-уведомления"
+        description="Если отправленная вами жалоба была обработана модератором"
+        checked={prefs.is_report_process_notifications_enabled}
+        disabled={prefBusy}
+        onChange={() => { void toggleBoolPref('is_report_process_notifications_enabled'); }}
+      />
     </section>
   </div>
 {:else}

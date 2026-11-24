@@ -58,6 +58,7 @@
   } from '../icons';
   import UiV2PopupMenu, { type UiV2PopupMenuItem } from '../uikit-v2/UiV2PopupMenu.svelte';
   import UiV2Card from '../uikit-v2/UiV2Card.svelte';
+  import UiV2Select from '../uikit-v2/UiV2Select.svelte';
   import UiV2RoundButton from '../uikit-v2/UiV2RoundButton.svelte';
   import { uiv2CustomScroll } from '../../actions/uiv2CustomScroll';
   import { portal } from '../../actions/portal';
@@ -1077,43 +1078,26 @@
     Где показывать миниатюры под пунктами меню и что в них выводить.
   </p>
 
-  <div class="nav-settings__placement" role="radiogroup" aria-label="Расположение миниатюр">
-    {#each SIDEBAR_PINS_PLACEMENT_OPTIONS as opt (opt.id)}
-      {@const on = pinsPlacement === opt.id}
-      <div class="nav-settings__pin" class:nav-settings__pin--on={on}>
-        <UiV2RoundButton
-          size="lg"
-          label={opt.label}
-          title={opt.hint}
-          class={on ? 'nav-settings__pin-btn--on' : (opt.id === 'none' ? 'nav-settings__pin-btn--none' : '')}
-          onclick={() => setPlacement(opt.id)}
-        >
-          {@html placementIcon(opt.id)}
-        </UiV2RoundButton>
-        <span class="nav-settings__pin-label">{opt.label}</span>
-      </div>
-    {/each}
-  </div>
+  <UiV2Select
+    appearance="row"
+    label="Расположение миниатюр"
+    options={SIDEBAR_PINS_PLACEMENT_OPTIONS.map(({ id, label, hint }) => ({
+      value: id, label, desc: hint, icon: placementIcon(id),
+    }))}
+    value={pinsPlacement}
+    onChange={(value) => setPlacement(value as SidebarPinsPlacement)}
+  />
 
   {#if pinsPlacement !== 'none'}
-    <p class="uiv2-settings__desc nav-settings__source-desc">Что показывать</p>
-    <div class="nav-settings__pins" role="radiogroup" aria-label="Источник миниатюр">
-      {#each SIDEBAR_PINS_CONTENT_OPTIONS as opt (opt.id)}
-        {@const on = pinsSource === opt.id}
-        <div class="nav-settings__pin" class:nav-settings__pin--on={on}>
-          <UiV2RoundButton
-            size="lg"
-            label={opt.label}
-            title={opt.hint}
-            class={on ? 'nav-settings__pin-btn--on' : ''}
-            onclick={() => setPins(opt.id)}
-          >
-            {@html pinsIcon(opt.id)}
-          </UiV2RoundButton>
-          <span class="nav-settings__pin-label">{opt.label}</span>
-        </div>
-      {/each}
-    </div>
+    <UiV2Select
+      appearance="row"
+      label="Источник миниатюр"
+      options={SIDEBAR_PINS_CONTENT_OPTIONS.map(({ id, label, hint }) => ({
+        value: id, label, desc: hint, icon: pinsIcon(id),
+      }))}
+      value={pinsSource}
+      onChange={(value) => setPins(value as SidebarPinsSource)}
+    />
   {/if}
 </section>
 

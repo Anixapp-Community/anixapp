@@ -27,6 +27,7 @@
 
   type Props = {
     label?: string;
+    appearance?: 'default' | 'row';
     /** Сохранять выбор через anixApi.client.setBaseUrl */
     persist?: boolean;
     /** Интервал обновления ping, мс */
@@ -46,6 +47,7 @@
 
   let {
     label = 'API-эндпоинт',
+    appearance = 'default',
     persist = true,
     pingIntervalMs = 1500,
     disabled = false,
@@ -569,6 +571,7 @@
     </p>
     <UiV2Select
       {label}
+      {appearance}
       {ariaLabel}
       options={SELECTABLE_API_ENDPOINTS.map((opt) => {
         const geo = geoFor(opt.value);
@@ -591,6 +594,7 @@
   {:else}
     <UiV2Select
       {label}
+      {appearance}
       {ariaLabel}
       {options}
       bind:value

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ProfileHero from '../../Profile/v1/components/ProfileHero.svelte';
-  import Select from '../../../components/Select.svelte';
+  import UiV2Select from '../../../components/uikit-v2/UiV2Select.svelte';
   import { showToast } from '../../../stores/toast';
 
   type PrivacyVal = 0 | 1 | 2;
@@ -317,58 +317,46 @@
     <p class="acc-section__title">Приватность</p>
     <p class="acc-section__desc">Кто может видеть вашу информацию.</p>
 
-    <div class="acc-field">
-      <span class="acc-field__label">статистика</span>
-      <div class="acc-field__body">
-        <Select
-          options={PRIVACY_OPTIONS}
-          value={privacyStats}
-          onChange={(v) => {
-            privacyStats = v;
-            savePrivacy('stats', v);
-          }}
-        />
-      </div>
-    </div>
-    <div class="acc-field">
-      <span class="acc-field__label">счётчики</span>
-      <div class="acc-field__body">
-        <Select
-          options={PRIVACY_OPTIONS}
-          value={privacyCounts}
-          onChange={(v) => {
-            privacyCounts = v;
-            savePrivacy('counts', v);
-          }}
-        />
-      </div>
-    </div>
-    <div class="acc-field">
-      <span class="acc-field__label">соц. сети</span>
-      <div class="acc-field__body">
-        <Select
-          options={PRIVACY_OPTIONS}
-          value={privacySocial}
-          onChange={(v) => {
-            privacySocial = v;
-            savePrivacy('social', v);
-          }}
-        />
-      </div>
-    </div>
-    <div class="acc-field">
-      <span class="acc-field__label">заявки</span>
-      <div class="acc-field__body">
-        <Select
-          options={PRIVACY_FR_OPTIONS}
-          value={privacyFr}
-          onChange={(v) => {
-            privacyFr = v;
-            savePrivacy('friend_requests', v);
-          }}
-        />
-      </div>
-    </div>
+    <UiV2Select
+      appearance="row"
+      label="Статистика"
+      options={PRIVACY_OPTIONS}
+      value={privacyStats}
+      onChange={(v) => {
+        privacyStats = v;
+        savePrivacy('stats', v);
+      }}
+    />
+    <UiV2Select
+      appearance="row"
+      label="Счётчики"
+      options={PRIVACY_OPTIONS}
+      value={privacyCounts}
+      onChange={(v) => {
+        privacyCounts = v;
+        savePrivacy('counts', v);
+      }}
+    />
+    <UiV2Select
+      appearance="row"
+      label="Соц. сети"
+      options={PRIVACY_OPTIONS}
+      value={privacySocial}
+      onChange={(v) => {
+        privacySocial = v;
+        savePrivacy('social', v);
+      }}
+    />
+    <UiV2Select
+      appearance="row"
+      label="Заявки"
+      options={PRIVACY_FR_OPTIONS}
+      value={privacyFr}
+      onChange={(v) => {
+        privacyFr = v;
+        savePrivacy('friend_requests', v);
+      }}
+    />
   </div>
 
 {/if}

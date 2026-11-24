@@ -118,6 +118,7 @@ export function setReleaseFriendsLayout(layout: ReleaseFriendsLayout): void {
 
 const SCHEDULE_PANEL_WIDTH_KEY = 'anixapp.schedulePanelWidth';
 const PROFILE_PANEL_WIDTH_KEY = 'anixapp.profilePanelWidth';
+const SETTINGS_PANEL_WIDTH_KEY = 'anixapp.settingsPanelWidth';
 const COMMENTS_PANEL_WIDTH_KEY = 'anixapp.commentsPanelWidth';
 
 /** Дефолты: 22rem / 26rem / 30rem при 16px root */
@@ -160,6 +161,18 @@ export function setSchedulePanelWidthPx(widthPx: number): number {
 
 export function getProfilePanelWidthPx(): number {
   return readPanelWidthPx(PROFILE_PANEL_WIDTH_KEY, DEFAULT_PROFILE_PANEL_WIDTH_PX);
+}
+
+export function getSettingsPanelWidthPx(): number {
+  return readPanelWidthPx(SETTINGS_PANEL_WIDTH_KEY, SIDEBAR_PANEL_WIDTH_MAX_PX);
+}
+
+export function setSettingsPanelWidthPx(widthPx: number): number {
+  const next = clampSidebarPanelWidthPx(widthPx);
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    window.localStorage.setItem(SETTINGS_PANEL_WIDTH_KEY, String(next));
+  }
+  return next;
 }
 
 export function setProfilePanelWidthPx(widthPx: number): number {

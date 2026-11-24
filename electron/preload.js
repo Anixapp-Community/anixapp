@@ -326,8 +326,8 @@ contextBridge.exposeInMainWorld('electron', {
     previewSound: (soundId) => ipcRenderer.invoke('notifications:previewSound', soundId),
     clear: () => ipcRenderer.invoke('notifications:clear'),
     /** Живой превью угла / кастомный стек на реальном экране. */
-    previewCorner: (position, items) =>
-      ipcRenderer.invoke('notifications:previewCorner', position, items ?? null),
+    previewCorner: (position, items, durationMs) =>
+      ipcRenderer.invoke('notifications:previewCorner', position, items ?? null, durationMs),
     endPreviewCorner: () => ipcRenderer.invoke('notifications:endPreviewCorner'),
     /** Статус FCM push (как на Android). */
     fcmStatus: () => ipcRenderer.invoke('notifications:fcmStatus'),

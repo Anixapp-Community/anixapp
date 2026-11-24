@@ -55,6 +55,7 @@
   import UiV2ScrollArea from '../components/uikit-v2/UiV2ScrollArea.svelte';
   import UiV2Tooltip from '../components/uikit-v2/UiV2Tooltip.svelte';
   import UiV2Select from '../components/uikit-v2/UiV2Select.svelte';
+  import UiKitV2SettingsDemo from './Settings/pages/UiKitV2SettingsDemo.svelte';
   import UiV2EndpointSelect from '../components/uikit-v2/UiV2EndpointSelect.svelte';
   import UiV2FeedPost from '../components/uikit-v2/UiV2FeedPost.svelte';
   import UiV2FeedPostSkeleton from '../components/uikit-v2/UiV2FeedPostSkeleton.svelte';
@@ -112,7 +113,8 @@
     | 'comments'
     | 'menu'
     | 'release-friends'
-    | 'notifications';
+    | 'notifications'
+    | 'settings';
 
   const sections: { id: SectionId; title: string; desc: string }[] = [
     { id: 'tokens', title: 'Токены', desc: 'Цвета, радиусы, тени — основа V2' },
@@ -125,6 +127,7 @@
     { id: 'menu', title: 'Popup Menu', desc: 'Вложенные меню, тоглы, копирование без закрытия' },
     { id: 'release-friends', title: 'Друзья на релизе', desc: 'Блок друзей на странице тайтла: статусы, поиск, сетка' },
     { id: 'notifications', title: 'Уведомления', desc: 'Колокольчик и оверлей-баннеры — с аватарами друзей' },
+    { id: 'settings', title: 'Настройки', desc: 'Интерактивные примеры. Изменения действуют только в этой вкладке.' },
   ];
   let active: SectionId = $state('notifications');
   let feedDemoNavId = $state('latest');
@@ -2364,6 +2367,8 @@
             <h3 class="uikit-v2-demo-block__title">Пусто</h3>
             <UiV2ReleaseFriends friends={[]} />
           </div>
+        {:else if s.id === 'settings'}
+          <UiKitV2SettingsDemo />
         {:else if s.id === 'notifications'}
           <div class="uikit-v2-demo-block">
             <h3 class="uikit-v2-demo-block__title">Друзья в демо</h3>

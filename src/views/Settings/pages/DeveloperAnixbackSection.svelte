@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import Select from '../../../components/Select.svelte';
+  import UiV2Select from '../../../components/uikit-v2/UiV2Select.svelte';
   import {
     ANIXBACK_ENDPOINT_OPTIONS,
     DEFAULT_ANIXBACK_MODE,
@@ -77,19 +77,14 @@
     Объявления, чат, лобби. Сейчас: <code>{anixbackCurrentOrigin}</code>
   </p>
   <div class="settings-section__body">
-    <div class="settings-row settings-row--column">
-      <div class="settings-row__info">
-        <div class="settings-row__label">Сервер AnixBack</div>
-        <div class="settings-row__desc">Эндпоинт для объявлений, чата и лобби.</div>
-      </div>
-      <div class="settings-row__control settings-row__control--wide">
-        <Select
-          options={anixbackOptions}
-          value={anixbackMode}
-          onChange={setAnixback}
-          placeholder="Выберите сервер"
-        />
-      </div>
-    </div>
+    <UiV2Select
+      appearance="row"
+      label="Сервер AnixBack"
+      description="Эндпоинт для объявлений, чата и лобби."
+      options={anixbackOptions}
+      value={anixbackMode}
+      onChange={setAnixback}
+      placeholder="Выберите сервер"
+    />
   </div>
 </div>

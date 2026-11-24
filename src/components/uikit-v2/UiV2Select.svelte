@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { scale } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { scale, slide } from 'svelte/transition';
+  import { cubicIn, cubicOut, quintOut } from 'svelte/easing';
   import { portal } from '../../actions/portal';
   import { uiv2CustomScroll } from '../../actions/uiv2CustomScroll';
   import { iconArrowUpDown, iconCheck, iconChevronDown } from '../icons';
@@ -26,18 +26,19 @@
 
   type Props = {
     label?: string;
+    description?: string;
     placeholder?: string;
     options?: UiV2SelectOption[];
     value?: string | null;
     disabled?: boolean;
     id?: string;
     class?: string;
-    /** Доп. класс на выпадающую панель (она порталится в body) */
+    /** Доп. класс списка вариантов */
     panelClass?: string;
     /** Компактный триггер — только иконка (тулбары) */
     compact?: boolean;
     /** Крупный заголовок без рамки (сортировка ленты как на Android). */
-    appearance?: 'default' | 'title';
+    appearance?: 'default' | 'title' | 'row';
     /** Доступное имя, если нет видимого label */
     ariaLabel?: string;
     onChange?: (value: string) => void;
@@ -45,6 +46,7 @@
 
   let {
     label,
+    description,
     placeholder = 'Выберите…',
     options = [],
     value = $bindable(null),
@@ -59,6 +61,7 @@
   }: Props = $props();
 
   const isTitle = $derived(appearance === 'title');
+  const isRow = $derived(appearance === 'row' && !compact);
 
   const GAP = 8;
   const EDGE = 10;
@@ -79,6 +82,20 @@
   const compactTitle = $derived(
     selected?.desc ? `${selected.label} · ${selected.desc}` : (selected?.label ?? placeholder),
   );
+
+  function animateInlineList(node: HTMLElement, { closing = false } = {}) {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const layout = slide(node, {
+      duration: reducedMotion ? 0 : closing ? 150 : 260,
+      easing: closing ? cubicIn : quintOut,
+    });
+
+    return {
+      ...layout,
+      css: (progress: number, remaining: number) =>
+        `${layout.css?.(progress, remaining) ?? ''}opacity:${progress ** 2};transform:translateY(${-5 * remaining}px);`,
+    };
+  }
 
   function isTriggerVisible(): boolean {
     if (!triggerEl) return false;
@@ -129,6 +146,7 @@
   async function openPanel() {
     if (disabled || open) return;
     open = true;
+    if (isRow) return;
     await tick();
     await updatePanelPosition();
     requestAnimationFrame(() => updatePanelPosition());
@@ -150,6 +168,7 @@
     value = opt.value;
     onChange?.(opt.value);
     closePanel();
+    if (isRow) triggerEl?.focus({ preventScroll: true });
   }
 
   function onOverlayClick(e: MouseEvent) {
@@ -183,10 +202,13 @@
 
   $effect(() => {
     if (!open) return;
+    const floating = !isRow;
     document.addEventListener('click', onDocumentClick, true);
     document.addEventListener('keydown', onDocumentKeydown, true);
-    window.addEventListener('scroll', onScrollOrResize, true);
-    window.addEventListener('resize', onScrollOrResize);
+    if (floating) {
+      window.addEventListener('scroll', onScrollOrResize, true);
+      window.addEventListener('resize', onScrollOrResize);
+    }
     return () => {
       document.removeEventListener('click', onDocumentClick, true);
       document.removeEventListener('keydown', onDocumentKeydown, true);
@@ -196,14 +218,73 @@
   });
 </script>
 
+{#snippet optionList()}
+  <div
+    class="uiv2-select__scroll uiv2-scroll-area uiv2-scroll-area--y"
+    use:uiv2CustomScroll={{ axis: 'y', viewportSelector: '.uiv2-select__list' }}
+  >
+    <ul class="uiv2-select__list uiv2-scroll-area__viewport" data-uiv2-scroll>
+      {#each options as opt (opt.value)}
+        <li class="uiv2-select__item">
+          <button
+            type="button"
+            class="uiv2-select__option"
+            class:uiv2-select__option--selected={value === opt.value}
+            class:uiv2-select__option--disabled={opt.disabled}
+            class:uiv2-select__option--with-desc={!!opt.desc || !!opt.warning}
+            role="option"
+            aria-selected={value === opt.value}
+            disabled={opt.disabled}
+            onclick={() => selectOption(opt)}
+          >
+            {#if showLeading}
+              <span class="uiv2-select__option-leading">
+                {#if opt.status}
+                  <span class="uiv2-status-dot uiv2-status-dot--{opt.status}" aria-hidden="true"></span>
+                {/if}
+                {#if opt.icon}
+                  <span class="uiv2-select__option-icon">{@html opt.icon}</span>
+                {/if}
+              </span>
+            {/if}
+            <span class="uiv2-select__option-body">
+              <span class="uiv2-select__option-label">{opt.label}</span>
+              {#if opt.desc}
+                <span class="uiv2-select__option-desc">{opt.desc}</span>
+              {/if}
+              {#if opt.warning}
+                <span class="uiv2-select__option-warning">{opt.warning}</span>
+              {/if}
+            </span>
+            <span class="uiv2-select__option-trailing">
+              {#if value !== opt.value && opt.hint}
+                <span class="uiv2-select__option-hint">{opt.hint}</span>
+              {/if}
+              {#if value === opt.value}
+                <span class="uiv2-select__option-check" aria-hidden="true">
+                  {@html iconCheck(16)}
+                </span>
+              {/if}
+            </span>
+          </button>
+        </li>
+      {/each}
+    </ul>
+    <div class="uiv2-scroll-area__v-track" aria-hidden="true">
+      <div class="uiv2-scroll-area__v-thumb"></div>
+    </div>
+  </div>
+{/snippet}
+
 <div
   class="uiv2-select {className}"
   class:uiv2-select--disabled={disabled}
   class:uiv2-select--open={open}
   class:uiv2-select--compact={compact}
   class:uiv2-select--title={isTitle}
+  class:uiv2-select--row={isRow}
 >
-  {#if label && !compact}
+  {#if label && !compact && !isRow}
     <label class="uiv2-select__label" for="{id}-trigger">{label}</label>
   {/if}
 
@@ -218,7 +299,10 @@
       aria-haspopup="listbox"
       aria-expanded={open}
       aria-controls={open ? listboxId : undefined}
-      aria-label={ariaLabel ?? (compact ? compactTitle : undefined)}
+      aria-label={isRow && (ariaLabel || label)
+        ? `${ariaLabel || label}, ${selected?.label ?? placeholder}`
+        : ariaLabel ?? (compact ? compactTitle : undefined)}
+      aria-describedby={isRow && description ? `${id}-description` : undefined}
       title={compact ? compactTitle : undefined}
       {disabled}
       onclick={togglePanel}
@@ -228,6 +312,12 @@
           {@html iconArrowUpDown(18)}
         </span>
       {:else}
+        {#if isRow && label}
+          <span class="uiv2-select__row-copy">
+            <span class="uiv2-select__row-label">{label}</span>
+            {#if description}<span id="{id}-description" class="uiv2-select__row-description">{description}</span>{/if}
+          </span>
+        {/if}
         <span class="uiv2-select__value">
           {#if selected}
             <span class="uiv2-select__value-main">
@@ -259,9 +349,29 @@
       {/if}
     </button>
   </div>
+  {#if open && isRow}
+    <div
+      class="uiv2-select__inline"
+      in:animateInlineList
+      out:animateInlineList={{ closing: true }}
+    >
+      <div
+        bind:this={panelEl}
+        id={listboxId}
+        class="uiv2-select__panel uiv2-select__panel--inline {panelClass}"
+        class:uiv2-select__panel--with-leading={showLeading}
+        role="listbox"
+        tabindex="-1"
+        aria-labelledby="{id}-trigger"
+        inert={!open}
+      >
+        {@render optionList()}
+      </div>
+    </div>
+  {/if}
 </div>
 
-{#if open}
+{#if open && !isRow}
   <div
     class="uiv2-select__overlay"
     data-uiv2-select-portal
@@ -288,61 +398,7 @@
       transition:scale={{ duration: 200, start: 0.97, easing: cubicOut }}
       onpointerdown={(e) => e.stopPropagation()}
     >
-      <div
-        class="uiv2-select__scroll uiv2-scroll-area uiv2-scroll-area--y"
-        use:uiv2CustomScroll={{ axis: 'y', viewportSelector: '.uiv2-select__list' }}
-      >
-        <ul class="uiv2-select__list uiv2-scroll-area__viewport" data-uiv2-scroll>
-          {#each options as opt (opt.value)}
-            <li class="uiv2-select__item">
-              <button
-                type="button"
-                class="uiv2-select__option"
-                class:uiv2-select__option--selected={value === opt.value}
-                class:uiv2-select__option--disabled={opt.disabled}
-                class:uiv2-select__option--with-desc={!!opt.desc || !!opt.warning}
-                role="option"
-                aria-selected={value === opt.value}
-                disabled={opt.disabled}
-                onclick={() => selectOption(opt)}
-              >
-                {#if showLeading}
-                  <span class="uiv2-select__option-leading">
-                    {#if opt.status}
-                      <span class="uiv2-status-dot uiv2-status-dot--{opt.status}" aria-hidden="true"></span>
-                    {/if}
-                    {#if opt.icon}
-                      <span class="uiv2-select__option-icon">{@html opt.icon}</span>
-                    {/if}
-                  </span>
-                {/if}
-                <span class="uiv2-select__option-body">
-                  <span class="uiv2-select__option-label">{opt.label}</span>
-                  {#if opt.desc}
-                    <span class="uiv2-select__option-desc">{opt.desc}</span>
-                  {/if}
-                  {#if opt.warning}
-                    <span class="uiv2-select__option-warning">{opt.warning}</span>
-                  {/if}
-                </span>
-                <span class="uiv2-select__option-trailing">
-                  {#if value !== opt.value && opt.hint}
-                    <span class="uiv2-select__option-hint">{opt.hint}</span>
-                  {/if}
-                  {#if value === opt.value}
-                    <span class="uiv2-select__option-check" aria-hidden="true">
-                      {@html iconCheck(16)}
-                    </span>
-                  {/if}
-                </span>
-              </button>
-            </li>
-          {/each}
-        </ul>
-        <div class="uiv2-scroll-area__v-track" aria-hidden="true">
-          <div class="uiv2-scroll-area__v-thumb"></div>
-        </div>
-      </div>
+      {@render optionList()}
     </div>
   </div>
 {/if}

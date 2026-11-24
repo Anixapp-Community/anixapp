@@ -184,6 +184,7 @@ export function mountNotificationBanner(root: HTMLElement): void {
   let currentStyle = 'compact';
   let heightRaf = 0;
   let stackExiting = false;
+  let stackExitTimer: number | undefined;
   let peakHeight = STYLE_HEIGHT.compact + STACK_PADDING * 2;
 
   function measureStackHeight(): number {
@@ -383,6 +384,7 @@ export function mountNotificationBanner(root: HTMLElement): void {
     shell.style.opacity = '0';
     window.setTimeout(() => {
       shell.remove();
+      if (rendered.get(id) !== shell) return;
       rendered.delete(id);
       leaving.delete(id);
       const active = [...rendered.keys()].filter((k) => !leaving.has(k)).length;
@@ -399,7 +401,8 @@ export function mountNotificationBanner(root: HTMLElement): void {
     stack.classList.add('nb-stack--exiting');
     bridge.setIgnoreMouse?.(true);
     for (const [id] of rendered) leaving.add(id);
-    window.setTimeout(() => {
+    stackExitTimer = window.setTimeout(() => {
+      stackExitTimer = undefined;
       for (const el of [...rendered.values()]) el.remove();
       rendered.clear();
       leaving.clear();
@@ -436,10 +439,13 @@ export function mountNotificationBanner(root: HTMLElement): void {
   }
 
   function update(items: NotificationBannerItem[], meta?: { position?: string; style?: string }): void {
+    if (stackExiting && items.length === 0) return;
     if (meta?.position) currentPosition = meta.position;
     if (meta?.style) currentStyle = normalizeStyle(meta.style);
 
-    if (stackExiting && items.length > 0) {
+    if (stackExiting) {
+      window.clearTimeout(stackExitTimer);
+      stackExitTimer = undefined;
       stack.classList.remove('nb-stack--exiting');
       stackExiting = false;
       for (const el of [...rendered.values()]) el.remove();

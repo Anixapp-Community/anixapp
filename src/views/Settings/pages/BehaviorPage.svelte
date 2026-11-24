@@ -14,7 +14,7 @@
     refreshDeviceDiagnostics,
     type DiagnosticLine,
   } from '../../../services/device-diagnostics';
-  import UiV2Toggle from '../../../components/uikit-v2/UiV2Toggle.svelte';
+  import UiV2SettingsToggle from '../../../components/uikit-v2/UiV2SettingsToggle.svelte';
   import UiV2SettingsRow from '../../../components/uikit-v2/UiV2SettingsRow.svelte';
   import UiV2Button from '../../../components/uikit-v2/UiV2Button.svelte';
 
@@ -119,14 +119,13 @@
         <h3 class="uiv2-settings__title">Видеокарта</h3>
         <div class="uiv2-settings__group">
           {#if mobileAccelAvailable}
-            <UiV2SettingsRow
-              title="Адаптивное ускорение"
-              desc={adaptiveAcceleration !== accelAtLaunch
+            <UiV2SettingsToggle
+              label="Адаптивное ускорение"
+              description={adaptiveAcceleration !== accelAtLaunch
                 ? 'Изменение вступит в силу после перезапуска приложения.'
                 : 'Использовать видеокарту для обработки видео — без него не работает Anime4K. Выключите, если картинка мерцает или появляются артефакты.'}
-            >
-              <UiV2Toggle label="Адаптивное ускорение" checked={adaptiveAcceleration} onChange={saveAccel} />
-            </UiV2SettingsRow>
+              checked={adaptiveAcceleration} onChange={saveAccel}
+            />
           {/if}
           <UiV2SettingsRow
             title="Видеокарта для Anime4K"
@@ -185,16 +184,12 @@
       <section class="uiv2-settings__block">
         <h3 class="uiv2-settings__title">TV-интерфейс</h3>
         <div class="uiv2-settings__group">
-          <UiV2SettingsRow
-            title="Показывать Local metrics"
-            desc="Панель с LCP, CLS, INP и сетевыми запросами внизу экрана. По умолчанию выключена."
-          >
-            <UiV2Toggle
-              label="Показывать Local metrics"
-              checked={debugMetrics}
-              onChange={saveDebugMetrics}
-            />
-          </UiV2SettingsRow>
+          <UiV2SettingsToggle
+            label="Показывать Local metrics"
+            description="Панель с LCP, CLS, INP и сетевыми запросами внизу экрана. По умолчанию выключена."
+            checked={debugMetrics}
+            onChange={saveDebugMetrics}
+          />
         </div>
       </section>
     {/if}
@@ -203,18 +198,16 @@
       <section class="uiv2-settings__block">
         <h3 class="uiv2-settings__title">Окно</h3>
         <div class="uiv2-settings__group">
-          <UiV2SettingsRow
-            title="Сворачивать в трей при закрытии"
-            desc="Окно скрывается в системный трей вместо выхода"
-          >
-            <UiV2Toggle label="Сворачивать в трей" checked={minimizeToTray} onChange={saveTray} />
-          </UiV2SettingsRow>
-          <UiV2SettingsRow
-            title="Адаптивное ускорение"
-            desc="Использовать аппаратное ускорение (GPU). Может повысить производительность, но иногда вызывает артефакты. Требуется перезапуск."
-          >
-            <UiV2Toggle label="Адаптивное ускорение" checked={adaptiveAcceleration} onChange={saveAccel} />
-          </UiV2SettingsRow>
+          <UiV2SettingsToggle
+            label="Сворачивать в трей при закрытии"
+            description="Окно скрывается в системный трей вместо выхода"
+            checked={minimizeToTray} onChange={saveTray}
+          />
+          <UiV2SettingsToggle
+            label="Адаптивное ускорение"
+            description="Использовать аппаратное ускорение (GPU). Может повысить производительность, но иногда вызывает артефакты. Требуется перезапуск."
+            checked={adaptiveAcceleration} onChange={saveAccel}
+          />
         </div>
       </section>
     {/if}

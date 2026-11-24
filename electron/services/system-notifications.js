@@ -332,6 +332,8 @@ function createService(deps) {
   let cornerPreview = null;
   /** Инкремент отменяет незавершённую смену угла. */
   let cornerPreviewGen = 0;
+  let cornerPreviewTimeout = null;
+  let cornerPreviewDuration = 0;
 
   function resolveBannerPosition(settings) {
     return cornerPreview?.position || settings.position || 'bottom-right';
@@ -651,6 +653,14 @@ function createService(deps) {
       style: settings.bannerStyle,
     });
 
+    if (cornerPreview && visible > 0 && cornerPreviewDuration > 0 && !cornerPreviewTimeout) {
+      const gen = cornerPreviewGen;
+      cornerPreviewTimeout = setTimeout(() => {
+        cornerPreviewTimeout = null;
+        if (gen === cornerPreviewGen) clearCornerPreview();
+      }, cornerPreviewDuration);
+    }
+
     if (hideBannerTimer) {
       clearTimeout(hideBannerTimer);
       hideBannerTimer = null;
@@ -698,7 +708,7 @@ function createService(deps) {
     }
   }
 
-  function setCornerPreview(position, customItems) {
+  function setCornerPreview(position, customItems, durationMs) {
     const allowed = new Set(['top-left', 'top-right', 'bottom-left', 'bottom-right']);
     if (!allowed.has(position)) return false;
     const settings = config.getNotificationSettings();
@@ -710,6 +720,9 @@ function createService(deps) {
     const gap = BANNER_ITEM_GAP;
     const stackH = STACK_PADDING * 2 + count * styleH + (count - 1) * gap;
     const gen = ++cornerPreviewGen;
+    clearTimeout(cornerPreviewTimeout);
+    cornerPreviewTimeout = null;
+    cornerPreviewDuration = Number.isFinite(durationMs) ? Math.min(10000, Math.max(0, durationMs)) : 0;
 
     createBannerWindow();
 
@@ -742,6 +755,7 @@ function createService(deps) {
       && prevCount === count
       && cornerPreview?.items?.length
     ) {
+      if (bannerReady) flushBanners();
       return true;
     }
 
@@ -755,6 +769,9 @@ function createService(deps) {
 
   function clearCornerPreview() {
     cornerPreviewGen += 1;
+    clearTimeout(cornerPreviewTimeout);
+    cornerPreviewTimeout = null;
+    cornerPreviewDuration = 0;
     if (!cornerPreview) return false;
     const pos = cornerPreview.position;
     // Один flush с пустым списком → stack exit в рендерере. Потом тихо снимаем preview.
@@ -773,7 +790,7 @@ function createService(deps) {
       } else if (bannerReady) {
         flushBanners();
       }
-    }, 360);
+    }, 450);
     return true;
   }
 
@@ -1246,9 +1263,9 @@ function createService(deps) {
       clearBanners();
       return true;
     });
-    ipcMain.handle('notifications:previewCorner', (_, position, items) => {
+    ipcMain.handle('notifications:previewCorner', (_, position, items, durationMs) => {
       if (typeof position !== 'string') return false;
-      return setCornerPreview(position, items);
+      return setCornerPreview(position, items, durationMs);
     });
     ipcMain.handle('notifications:endPreviewCorner', () => clearCornerPreview());
     ipcMain.handle('notifications:soundVolume', () => getSoundVolume());

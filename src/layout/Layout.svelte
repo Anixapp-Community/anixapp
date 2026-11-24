@@ -44,9 +44,11 @@
   import {
     getCommentsPanelWidthPx,
     getProfilePanelWidthPx,
+    getSettingsPanelWidthPx,
     getSchedulePanelWidthPx,
     setCommentsPanelWidthPx,
     setProfilePanelWidthPx,
+    setSettingsPanelWidthPx,
     setSchedulePanelWidthPx,
     getSidebarNavChromeSide,
     getSidebarNavEntriesForSide,
@@ -122,6 +124,7 @@
 
   let schedulePanelWidthPx = $state(getSchedulePanelWidthPx());
   let profilePanelWidthPx = $state(getProfilePanelWidthPx());
+  let settingsPanelWidthPx = $state(getSettingsPanelWidthPx());
   let commentsPanelWidthPx = $state(getCommentsPanelWidthPx());
 
   /** Комментарии: панель в DOM (outro) и визуально открытая (CSS --open). */
@@ -814,18 +817,18 @@
       aria-hidden={!settingsActive}
       ontransitionend={onSettingsTransitionEnd}
     >
-      <div class="schedule-panel-shell schedule-panel-shell--profile" style={`width: ${profilePanelWidthPx}px`}>
+      <div class="schedule-panel-shell schedule-panel-shell--profile" style={`width: ${settingsPanelWidthPx}px`}>
         <div class="schedule-panel-shell__body">
           <SettingsModal onClose={() => closeSettings()} />
         </div>
         <SidebarPanelResizeHandle
-          widthPx={profilePanelWidthPx}
+          widthPx={settingsPanelWidthPx}
           label="Ширина настроек"
           onWidthChange={(w) => {
-            profilePanelWidthPx = w;
+            settingsPanelWidthPx = w;
           }}
           onWidthCommit={(w) => {
-            profilePanelWidthPx = setProfilePanelWidthPx(w);
+            settingsPanelWidthPx = setSettingsPanelWidthPx(w);
           }}
         />
       </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import UiV2SettingsToggle from '../../../components/uikit-v2/UiV2SettingsToggle.svelte';
   import { onMount } from 'svelte';
 
   interface BridgeStatus {
@@ -93,35 +94,13 @@
     </div>
   {:else}
     <div class="settings-section__body">
-      <div class="settings-row">
-        <div class="settings-row__info">
-          <div class="settings-row__label">Включить API-мост</div>
-          <div class="settings-row__desc developer-bridge__status-line">
-            {#if status.running}
-              <span class="developer-bridge__status developer-bridge__status--on">Запущен</span>
-              <code class="developer-bridge__url">{status.baseUrl}</code>
-            {:else if status.enabled}
-              <span class="developer-bridge__status developer-bridge__status--pending">Ожидание</span>
-              <span>Включён, сервер ещё не поднялся</span>
-            {:else}
-              <span class="developer-bridge__status developer-bridge__status--off">Выключен</span>
-              <span>Внешние запросы отклоняются</span>
-            {/if}
-          </div>
-        </div>
-        <div class="settings-row__control">
-          <label class="settings-toggle-switch" aria-label="API-мост">
-            <input
-              type="checkbox"
-              checked={status.enabled}
-              disabled={busy}
-              onchange={(e) => void setEnabled((e.currentTarget as HTMLInputElement).checked)}
-            />
-            <span class="settings-toggle-switch__track"></span>
-            <span class="settings-toggle-switch__thumb"></span>
-          </label>
-        </div>
-      </div>
+      <UiV2SettingsToggle
+        label="Включить API-мост"
+        description={status.running ? `Запущен · ${status.baseUrl}` : status.enabled ? 'Сервер запускается' : 'Внешние запросы отклоняются'}
+        checked={status.enabled}
+        disabled={busy}
+        onChange={(checked) => void setEnabled(checked)}
+      />
 
       {#if !status.hasAuth}
         <div class="developer-bridge__notice developer-bridge__notice--warn">

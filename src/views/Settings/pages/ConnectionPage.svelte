@@ -16,7 +16,7 @@
         Через какой адрес приложение обращается к Anixart. Если записи и серии не грузятся — попробуйте другой сервер
         или резервный прокси AnixApp.
       </p>
-      <UiV2EndpointSelect label="" ariaLabel="API-эндпоинт" onChange={onEndpointChange} />
+      <UiV2EndpointSelect appearance="row" label="API-эндпоинт" onChange={onEndpointChange} />
     </section>
   {/if}
 </div>

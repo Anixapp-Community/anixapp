@@ -418,6 +418,7 @@ declare global {
         previewCorner: (
           position: NotificationBannerPosition,
           items?: Array<{ title?: string; body?: string; kind?: string; image?: string }>,
+          durationMs?: number,
         ) => Promise<boolean>;
         endPreviewCorner: () => Promise<boolean>;
         /** FCM push (тот же канал, что Android NotificationService). */

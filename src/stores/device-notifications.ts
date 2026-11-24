@@ -351,6 +351,8 @@ export async function buildCornerPreviewItems(): Promise<CornerPreviewItem[]> {
 
 const STORAGE_KEY = 'anix.deviceNotificationSettings.v1';
 
+export const DEFAULT_NOTIFICATION_VOLUME = 100;
+
 const DEFAULT_SETTINGS: DeviceNotificationSettings = {
   desktopEnabled: true,
   useNativeNotifications: true,
@@ -359,7 +361,7 @@ const DEFAULT_SETTINGS: DeviceNotificationSettings = {
   flashTaskbar: true,
   soundEnabled: true,
   soundId: 'chime',
-  volume: 100,
+  volume: DEFAULT_NOTIFICATION_VOLUME,
   bannerCount: 3,
   position: 'bottom-right',
   appearance: 'banner',
@@ -585,6 +587,7 @@ export async function sendTestDeviceNotification(kind?: string): Promise<void> {
 export async function previewNotificationCorner(
   position: string,
   items?: Array<{ title?: string; body?: string; kind?: string; image?: string }>,
+  durationMs?: number,
 ): Promise<void> {
   let payload = items;
   if (!payload?.length) {
@@ -594,7 +597,7 @@ export async function previewNotificationCorner(
       payload = undefined;
     }
   }
-  await bridge()?.previewCorner?.(position as DeviceNotificationSettings['position'], payload);
+  await bridge()?.previewCorner?.(position as DeviceNotificationSettings['position'], payload, durationMs);
 }
 
 export async function endNotificationCornerPreview(): Promise<void> {
