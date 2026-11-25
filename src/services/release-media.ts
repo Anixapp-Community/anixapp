@@ -138,15 +138,23 @@ function startWatching(releaseId: number): () => void {
     () => undefined,
   );
 
-  const tick = async (first: boolean) => {
-    const m = await call(first ? 'POST' : 'GET', releaseId, first ? '/sync' : '');
+  const tick = async (request: Promise<MediaResponse | null>, retries: number) => {
+    const m = await request;
     if (stopped) return;
     if (m) store(m);
-    // No answer (service down, old backend) — don't keep hammering it.
     const busy = !!m && (m.state === 'planning' || m.state === 'working');
-    if (busy && Date.now() < until) timer = setTimeout(() => void tick(false), POLL_MS);
+    if ((busy || (!m && retries > 0)) && Date.now() < until) {
+      timer = setTimeout(() => void tick(call('GET', releaseId), m ? 2 : retries - 1), POLL_MS);
+    }
   };
-  void tick(true);
+  const initial = call('GET', releaseId).then((m) => {
+    if (!stopped && m) store(m);
+    return m;
+  });
+  void initial.then((current) => {
+    if (stopped) return;
+    return tick(call('POST', releaseId, '/sync').then((updated) => updated ?? current), 2);
+  });
 
   return () => {
     stopped = true;

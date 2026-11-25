@@ -6,8 +6,9 @@
   import { logLobbyAction, snapshotPlayback } from '../../services/lobby-action-log';
   import { getFluoPlayer, installWindowFluo, sendFluoPreviewFrame } from '../../fluo';
   import type { WatchState, EpisodeItem, DubberItem, LobbyActivityEntry, LobbyChatMessage, PopoverType, NextEpAltDub, DownloadedEpisodeItem, PlaybackAlt, SourceItem } from './_types';
-  import { isHlsUrl, isDubberBlacklisted, lobbyActionText, allowsIframeFallback, userPlaybackError } from './_utils';
+  import { isHlsUrl, isDubberBlacklisted, lobbyActionText, allowsIframeFallback, userPlaybackError, toCorsSafePlayUrl } from './_utils';
   import { createClickOrDblclick } from './_clickGate';
+  import { checkEpisodeAvailability } from './source-availability';
   import { setEmbedMediaContext } from './core/hls-media-context';
   import { normalizeSkipMarks, mergeSkipMarks, clampSkipMarksToDuration, skipMarkActive, endingIsAtEpisodeEnd, buildTimelineSausages, type SkipMarkKind, type SkipMarks } from './_skipMarks';
   import { getSkipAutoPref, setSkipAutoPref } from './_skipPrefs';
@@ -257,6 +258,17 @@
   let episodes       = $state<EpisodeItem[]>([]);
   let dubbers        = $state<DubberItem[]>([]);
   let dubberSources  = $state<SourceItem[]>([]);
+  type SourceStatus = NonNullable<SourceItem['availability']>;
+  type EpisodeResponse = Awaited<ReturnType<NonNullable<Window['anixApi']>['release']['getEpisode']>>;
+  const prefetchedEpisodes = new Map<string, { response: EpisodeResponse; expires: number }>();
+  const sourceChecks = new Map<string, { status: SourceStatus; quality: number; expires: number }>();
+  let sourceEpisodeQualities = $state<Record<number, number>>({});
+  let sourceStatus = $state<Record<number, SourceStatus>>({});
+  let sourceStatusScope = $state('');
+  let sourceMenuRequest = 0;
+  const currentSourceScope = $derived(
+    `${watchState.releaseId}:${watchState.dubberId}:${watchState.sourceId}:${watchState.ep}`,
+  );
   let downloadedEpisodes = $state<DownloadedEpisodeItem[]>([]);
   let localPlaybackPath = $state('');
   let externalPlaybackUrl = $state('');
@@ -1955,7 +1967,7 @@
       onStreamQuality: (quality) => {
         if (isCustomSourceId(watchState.sourceId) && quality.heights.length && Object.keys(player.availableQualities).length <= 1) {
           streamQuality = quality;
-          player.currentQuality = 'auto';
+          player.currentQuality = quality.heights.length > 1 ? 'auto' : quality.heights[0];
         }
       },
       onFallback: () => {
@@ -2044,8 +2056,13 @@
     const explicitWebPlayer = new URLSearchParams(location.search).get('webplayer') === '1';
     const url = episode.url;
     const resolved = await core.resolve(url, !!episode.iframe);
-    const media = episode.qualityMap && resolved.useVideo
-      ? { ...resolved, qualityMap: episode.qualityMap, currentQuality: episode.currentQuality ?? '' }
+    const corsSafeQualityMap = episode.qualityMap
+      ? Object.fromEntries(
+          Object.entries(episode.qualityMap).map(([q, qUrl]) => [q, toCorsSafePlayUrl(qUrl)]),
+        )
+      : undefined;
+    const media = corsSafeQualityMap && resolved.useVideo
+      ? { ...resolved, qualityMap: corsSafeQualityMap, currentQuality: episode.currentQuality ?? '' }
       : resolved;
     const api = window.anixApi?.release;
     const dubber = positiveId(dubId);
@@ -2092,7 +2109,11 @@
       void loadReleasePoster(String(rId));
     }
     void fetchEpisodesSilently();
-    return api.getEpisode(rId, sId, ep).then(async (res: any) => {
+    const prefetched = prefetchedEpisodes.get(`${rId}:${sId}:${ep}`);
+    const episodeRequest = prefetched && prefetched.expires > Date.now()
+      ? Promise.resolve(prefetched.response)
+      : api.getEpisode(rId, sId, ep);
+    return episodeRequest.then(async (res: any) => {
       if (myGen !== episodeLoadGen) return;
       let episode = res?.episode;
       // Films often use position 0; if target endpoint is empty, fall back to episodes list.
@@ -2313,8 +2334,39 @@
     if (target) await selectDownloadedEpisode(target);
   }
 
+  async function checkSource(
+    rId: number, dubId: number, position: number, source: SourceItem, isCurrent: () => boolean,
+    onQuality: (height: number) => void,
+  ): Promise<SourceStatus> {
+    const api = window.anixApi?.release;
+    if (!api?.getEpisode) return 'unknown';
+    const ep = String(source.id) === String(watchState.sourceId)
+      ? position
+      : await resolveEpisodeOnSource(rId, source.id, dubId, position);
+    if (!isCurrent() || ep == null) return 'unknown';
+    const key = `${rId}:${source.id}:${ep}`;
+    const cached = prefetchedEpisodes.get(key);
+    const response = cached && cached.expires > Date.now()
+      ? cached.response
+      : await api.getEpisode(rId, source.id, ep);
+    const episode = response?.episode;
+    if (!episode?.url) return 'unavailable';
+    if (!isCurrent()) return 'unknown';
+    const status = await checkEpisodeAvailability(episode, false, onQuality);
+    if (status === 'available' || status === 'proxy' || status === 'manifest') {
+      if (prefetchedEpisodes.size >= 100) prefetchedEpisodes.clear();
+      prefetchedEpisodes.set(key, { response, expires: Date.now() + 60_000 });
+    }
+    return status;
+  }
+
   async function openSourcePopover() {
     if (popoverType === 'source') return;
+    const request = ++sourceMenuRequest;
+    const scope = currentSourceScope;
+    const position = watchState.ep;
+    const isCurrent = () => request === sourceMenuRequest
+      && scope === currentSourceScope && popoverType === 'source';
     popoverType = 'source';
     if (isLocalPlaybackMode) {
       if (downloadedEpisodes.length === 0) await loadDownloadedEpisodes();
@@ -2338,12 +2390,40 @@
       return;
     }
     popoverLoading = true;
+    sourceStatusScope = scope;
+    sourceStatus = {};
+    sourceEpisodeQualities = {};
+    let sources: SourceItem[];
     try {
-      applySourceNameFromList(await listPlayableDubberSources(rId, dubId));
+      sources = await listPlayableDubberSources(rId, dubId);
     } catch {
-      dubberSources = [];
+      sources = [];
     }
+    if (request !== sourceMenuRequest || popoverType !== 'source') return;
     popoverLoading = false;
+    if (!isCurrent()) return;
+    applySourceNameFromList(sources);
+    sourceStatus = Object.fromEntries(sources.map(({ id }) => {
+      const hit = sourceChecks.get(`${scope}:${id}`);
+      if (hit && hit.expires > Date.now()) sourceEpisodeQualities[id] = hit.quality;
+      return [id, hit && hit.expires > Date.now() ? hit.status : 'checking'];
+    }));
+    const pending = sources.filter(({ id }) => sourceStatus[id] === 'checking');
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(3, pending.length) }, async () => {
+      while (isCurrent() && next < pending.length) {
+        const source = pending[next++];
+        let quality = 0;
+        const status = await checkSource(rId, dubId, position, source, isCurrent, (height) => {
+          quality = height;
+        }).catch(() => 'unknown' as const);
+        if (!isCurrent()) return;
+        if (sourceChecks.size >= 100) sourceChecks.clear();
+        sourceChecks.set(`${scope}:${source.id}`, { status, quality, expires: Date.now() + 60_000 });
+        sourceStatus[source.id] = status;
+        sourceEpisodeQualities[source.id] = quality;
+      }
+    }));
   }
 
   async function selectSource(src: SourceItem) {
@@ -4711,7 +4791,11 @@
     pipActive,
     episodes,
     dubbers,
-    sources: dubberSources,
+    sources: !isLocalPlaybackMode && sourceStatusScope === currentSourceScope
+      ? dubberSources.map((source) => ({
+          ...source, availability: sourceStatus[source.id], episodeQuality: sourceEpisodeQualities[source.id],
+        }))
+      : dubberSources,
     downloadedEpisodes,
     downloadedPositions,
     localMode: isLocalPlaybackMode,
@@ -4731,7 +4815,8 @@
     eqGains: player.eqGains,
     eqLevel: player.eqLevel,
     availableQualities: streamQuality
-      ? Object.fromEntries(['auto', ...streamQuality.heights].map((quality) => [quality, '']))
+      ? Object.fromEntries((streamQuality.heights.length > 1 ? ['auto', ...streamQuality.heights] : streamQuality.heights)
+          .map((quality) => [quality, '']))
       : player.availableQualities,
     currentQuality: player.currentQuality,
     speedLocked: inLobby,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sourcePlayerLabel } from '../../../utils/dubber-sources';
   import type { EpisodeItem, DubberItem, DownloadedEpisodeItem, SourceItem } from '../_types';
   import UiV2Button from '../../../components/uikit-v2/UiV2Button.svelte';
   import UiV2RoundButton from '../../../components/uikit-v2/UiV2RoundButton.svelte';
@@ -6,6 +7,7 @@
   import { fade } from 'svelte/transition';
   import { iconChevronDown, iconLobbyCollapse, iconLobbyCreate, iconLobbyExpand } from '../../../components/icons';
   import EpisodesPopover from './EpisodesPopover.svelte';
+  import { isFillerEpisode } from '../../../utils/episode-filler';
   import DubbingPopover from './DubbingPopover.svelte';
   import SourcesPopover from './SourcesPopover.svelte';
   import { episodeHistoryLabel } from '../../../utils/episode-display';
@@ -13,6 +15,7 @@
   interface Props {
     ep: number;
     title: string;
+    currentEpisodeQuality?: number;
     dubberName: string;
     sourceName: string;
     episodes: EpisodeItem[];
@@ -42,7 +45,7 @@
   }
 
   let {
-    ep, title, dubberName, sourceName,
+    ep, title, currentEpisodeQuality, dubberName, sourceName,
     episodes, dubbers, sources,
     downloadedEpisodes, downloadedPositions, localMode, currentDownloadedPath,
     currentDubberId, currentSourceId, popoverType, popoverLoading, lastEpisodeTypeUpdateId,
@@ -124,8 +127,9 @@
   const sourceLabel = $derived.by(() => {
     if (localMode) return sourceName || 'Файл';
     const fromList = sources.find((s) => String(s.id) === String(currentSourceId));
-    if (fromList?.name) return fromList.name;
-    if (sourceName && sourceName !== dubberName) return sourceName;
+    if (fromList?.name) return sourcePlayerLabel(fromList.name, dubberName);
+    const label = sourcePlayerLabel(sourceName, dubberName);
+    if (sourceName && (sourceName !== dubberName || label !== sourceName)) return label;
     return 'Источник';
   });
 </script>
@@ -179,7 +183,9 @@
         <UiV2Button
           size="sm"
           variant="chrome"
-          label={episodeLabel}
+          label={isFillerEpisode(title, episodes.find((episode) => episode.position === ep) ?? { position: ep })
+            ? `${episodeLabel} · Филлер`
+            : episodeLabel}
           ariaHaspopup="menu"
           ariaExpanded={popoverType === 'series'}
           onclick={(e) => toggleTrigger('series', e)}
@@ -236,6 +242,7 @@
   anchor={sourceAnchor}
   {sources}
   currentSourceName={sourceName}
+  {dubberName}
   {currentSourceId}
   loading={popoverLoading && popoverType === 'source'}
   onselect={(src) => { onselectSource(src); onclosePopover(); }}
@@ -248,6 +255,8 @@
   y={seriesY}
   anchor={seriesAnchor}
   {episodes}
+  {title}
+  {currentEpisodeQuality}
   {downloadedPositions}
   {localMode}
   currentEp={ep}

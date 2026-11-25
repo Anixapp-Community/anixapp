@@ -23,6 +23,7 @@ const VIDEO_HOSTS = [
   'studiomir.club', 'animedia.tv', 'zerocdn.com',
   'mail.ru', 'imgsmail.ru', 'myvi.top', 'myvi.tv',
   'secvideo1.online', 'csst.online', 'sstrge.online', 'sovetromantica.com',
+  'cdnlibs.org', 'imglib.info', 'tut-video.net',
 ];
 
 /** Не подменять CORS-заголовки — ломает YouTube/Rutube embed */

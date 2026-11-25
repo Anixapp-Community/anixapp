@@ -13,6 +13,10 @@ export interface EpisodeItem {
   position:    number;
   name:        string;
   is_watched?: boolean;
+  is_filler?: boolean;
+  isFiller?: boolean;
+  quality?: number | string;
+  max_quality?: number | string;
 }
 
 export interface DubberItem {
@@ -30,11 +34,16 @@ export interface DubberItem {
   pinned?:       boolean;
   /** 1 = 1080p, 2 = QHD, 3 = 4K */
   quality?:      number;
+  max_quality?:  number | string;
 }
 
 export interface SourceItem {
   id:   number;
   name: string;
+  quality?: number | string;
+  max_quality?: number | string;
+  episodeQuality?: number;
+  availability?: import('./source-availability').SourceAvailability;
 }
 
 export interface LobbyParticipant {

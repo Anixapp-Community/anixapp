@@ -4998,6 +4998,24 @@
   white-space: nowrap;
 }
 
+.uiv2-popup-menu__badge {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--uiv2-surface-raised, #353535);
+  color: var(--uiv2-fg, #fff);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.uiv2-popup-menu__badge--accent {
+  border: 1px solid currentColor;
+  background: transparent;
+  color: var(--uikit-v2-accent, #{$color-accent});
+  text-transform: uppercase;
+}
+
 .uiv2-popup-menu__chevron {
   display: inline-flex;
   align-items: center;

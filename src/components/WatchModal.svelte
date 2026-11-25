@@ -60,9 +60,11 @@
     episodeListDisplayTotalLabel,
     epWordRu,
   } from '../utils/episode-display';
-  import { formatDubberQuality, isDubberNovelty, readLastEpisodeTypeUpdateId, sortDubbersPinnedFirst } from '../utils/dubber-meta';
-  import { listPlayableDubberSources, NO_EPISODE_PICK_OTHER_DUB } from '../utils/dubber-sources';
+  import { isFillerEpisode } from '../utils/episode-filler';
+  import { formatQualityHeight, qualityHeight, isDubberNovelty, readLastEpisodeTypeUpdateId, sortDubbersPinnedFirst } from '../utils/dubber-meta';
+  import { listPlayableDubberSources, NO_EPISODE_PICK_OTHER_DUB, sourcePlayerLabel } from '../utils/dubber-sources';
   import { isCustomSourceId } from '../../electron/lib/custom-sources.mjs';
+  import { checkEpisodeAvailability, sourceAvailabilityLabels, type SourceAvailability } from '../views/Watch/source-availability';
   import { isTvMode } from '../platform/tv';
   import { releaseMedia, watchReleaseMedia } from '../services/release-media';
   import { fetchWatchProgress, isResumable, type WatchProgress } from '../services/watch-progress';
@@ -72,6 +74,7 @@
   import { touchLongPress } from '../actions/touchLongPress';
   import { pushBackHandler } from '../platform/mobile-back';
   import UiV2Button from './uikit-v2/UiV2Button.svelte';
+  import UiV2Tooltip from './uikit-v2/UiV2Tooltip.svelte';
   import UiV2PopupMenu, { type UiV2PopupMenuItem } from './uikit-v2/UiV2PopupMenu.svelte';
   import DesktopDownloadModal from './DesktopDownloadModal.svelte';
 
@@ -116,6 +119,8 @@
     name: string;
     url: string;
     iframe: boolean;
+    is_filler?: boolean;
+    isFiller?: boolean;
     is_watched?: boolean;
     isWatched?: boolean;
     created_at?: string;
@@ -137,7 +142,7 @@
     [key: string]: unknown;
   }
 
-  type ModalView = 'variants' | 'episodes' | 'updates';
+  type ModalView = 'variants' | 'sources' | 'episodes' | 'updates';
   type VariantFilter = 'all' | 'voice' | 'sub';
 
   let modalView = $state<ModalView>('variants');
@@ -146,13 +151,21 @@
   let sourcesError = $state('');
   let dubbers = $state<Dubber[]>([]);
   let sourceCounts = $state<Record<number, Record<string, number>>>({});
+  let catalogQualities = $state<Record<number, number>>({});
+  let checkedQualities = $state<Record<string, Record<number, number>>>({});
   let episodeRequest = 0;
+
+  function sourceCatalog(source: Source) {
+    return !isCustomSourceId(source.id) ? 'Anixart'
+        : source.name.includes('(YummyAnime)') ? 'YummyAnime'
+        : source.name === 'AnimeLib' || source.name.includes('(AnimeLib)') ? 'AnimeLib'
+        : source.name;
+  }
 
   function countSources(rows: Source[]) {
     const counts: Record<string, number> = {};
     for (const source of rows) {
-      const label = !isCustomSourceId(source.id) ? 'Anixart'
-        : source.name.includes('(YummyAnime)') ? 'YummyAnime' : 'AniType';
+      const label = sourceCatalog(source);
       counts[label] = (counts[label] ?? 0) + 1;
     }
     return counts;
@@ -163,13 +176,18 @@
     const rows = dubbers.map((d) => d.id);
     let active = true;
     sourceCounts = {};
+    catalogQualities = {};
     let index = 0;
     async function loadCounts() {
       while (active && index < rows.length) {
         const dubberId = rows[index++];
         try {
           const result = await listPlayableDubberSources(id, dubberId);
-          if (active) sourceCounts[dubberId] = countSources(result);
+          if (active) {
+            sourceCounts[dubberId] = countSources(result);
+            catalogQualities[dubberId] = Math.max(0, ...result.map((source) =>
+              Math.max(qualityHeight(source.max_quality), qualityHeight(source.quality))));
+          }
         } catch { /* A failed request does not hide the translation. */ }
       }
     }
@@ -186,6 +204,8 @@
   let updatesScrollRoot = $state<HTMLElement | null>(null);
   let selectedDubber = $state<Dubber | null>(null);
   let sources = $state<Source[]>([]);
+  let sourceAvailability = $state<Record<number, SourceAvailability>>({});
+  let sourceCheckGeneration = 0;
   let selectedSourceId = $state<number | null>(null);
   let episodes = $state<Episode[]>([]);
   let episodesLoading = $state(false);
@@ -717,22 +737,31 @@
   function backFromNestedView() {
     if (modalView === 'variants') { close(); return; }
     if (modalView === 'episodes') {
-      modalView = 'variants';
+      episodeRequest++;
+      modalView = 'sources';
+      episodesLoading = false;
+      episodesError = '';
       focusTvModalContent();
       return;
     }
-    if (modalView === 'updates') {
+    if (modalView === 'sources' || modalView === 'updates') {
+      episodeRequest++;
+      sourceCheckGeneration++;
       modalView = 'variants';
       focusTvModalContent();
     }
   }
 
-  function sourceLabel(source: Source): string {
-    if (selectedSourceId === source.id && liveEpisodeTotal > 0) {
-      return `${source.name} · ${liveEpisodeTotal} эп.`;
-    }
-    const count = normalizeEpisodeCount(source as Record<string, unknown>);
-    return count != null ? `${source.name} · ${count} эп.` : source.name;
+  function sourceReady(status?: SourceAvailability): boolean {
+    return status === 'available' || status === 'proxy';
+  }
+
+  function retrySourceChecks() {
+    if (!selectedDubber) return;
+    const pending = sources.filter(({ id }) => !sourceReady(sourceAvailability[id]));
+    const generation = ++sourceCheckGeneration;
+    for (const { id } of pending) sourceAvailability[id] = 'checking';
+    void checkDubberSources(pending, selectedDubber.id, generation, undefined, true);
   }
 
   function scrollToEpisode(position: number) {
@@ -749,9 +778,67 @@
     if (Number.isFinite(num) && num > 0) scrollToEpisode(num);
   }
 
+  async function checkDubberSources(rows: Source[], dubberId: number, generation: number, preferredEpisode?: number, refresh = false) {
+    const api = window.anixApi?.release;
+    if (!api) return;
+    const id = releaseId;
+    const isCurrent = () => generation === sourceCheckGeneration && (modalView === 'sources' || modalView === 'episodes')
+      && selectedDubber?.id === dubberId && releaseId === id;
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(3, rows.length) }, async () => {
+      while (isCurrent() && next < rows.length) {
+        const source = rows[next++];
+        let status: SourceAvailability = 'unknown';
+        try {
+          const list = await api.getEpisodes(id, dubberId, source.id);
+          const candidates = (list?.episodes ?? []).filter((ep) => Number.isFinite(ep.position)
+            && (ep.url || isCustomSourceId(source.id)));
+          const first = candidates.find((ep) => ep.position === preferredEpisode) ?? candidates[0];
+          const second = candidates.find((ep) => ep.position !== first?.position);
+          status = 'unavailable';
+          const recordQuality = (height: number) => {
+            if (!height || !isCurrent()) return;
+            const key = `${id}:${dubberId}`;
+            const known = checkedQualities[key] ?? {};
+            if (height > (known[source.id] ?? 0)) checkedQualities[key] = { ...known, [source.id]: height };
+          };
+          for (const candidate of [first, second]) {
+            if (!candidate || !isCurrent()) break;
+            let sample: SourceAvailability = 'unknown';
+            try {
+              const result = await api.getEpisode(id, source.id, candidate.position);
+              if (!isCurrent()) break;
+              if (result?.episode) {
+                recordQuality(Math.max(qualityHeight(result.episode.currentQuality),
+                  ...Object.keys(result.episode.qualityMap ?? {}).map(qualityHeight)));
+              }
+              sample = await checkEpisodeAvailability(result?.episode ?? candidate, refresh, recordQuality);
+            } catch { /* try the second sample */ }
+            if (sample === 'available' || sample === 'proxy') {
+              status = sample;
+              break;
+            }
+            if (sample === 'rateLimited') {
+              status = sample;
+              break;
+            }
+            if (sample === 'manifest' || status === 'unavailable') status = sample;
+          }
+        } catch { /* keep the source selectable */ }
+        if (isCurrent()) {
+          const firstReady = sourceReady(status) && !Object.values(sourceAvailability).some(sourceReady);
+          sourceAvailability[source.id] = status;
+          if (firstReady && modalView === 'sources') focusTvModalContent();
+        }
+      }
+    }));
+  }
+
   async function openDubber(dubber: Dubber, preferredSourceId?: number, focusEpisode?: number) {
     const request = ++episodeRequest;
-    modalView = 'episodes';
+    const generation = ++sourceCheckGeneration;
+    sourceAvailability = {};
+    modalView = 'sources';
     selectedDubber = dubber;
     sources = [];
     selectedSourceId = null;
@@ -770,28 +857,25 @@
 
     try {
       const srcs = await listPlayableDubberSources(releaseId, dubber.id);
-      if (request !== episodeRequest || modalView !== 'episodes') return;
+      if (request !== episodeRequest || modalView !== 'sources') return;
       sources = srcs;
+      episodesLoading = false;
+      sourceAvailability = Object.fromEntries(srcs.map(({ id }) => [id, 'checking']));
+      void checkDubberSources(srcs, dubber.id, generation, focusEpisode);
       if (srcs.length === 0) {
         episodesLoading = false;
         episodesError = NO_EPISODE_PICK_OTHER_DUB;
         return;
       }
-      // Счётчик серий в API бывает неточным: пустой источник — пробуем следующий.
-      const ordered = preferredSourceId == null
-        ? srcs
-        : [...srcs.filter((s) => s.id === preferredSourceId), ...srcs.filter((s) => s.id !== preferredSourceId)];
-      for (const src of ordered) {
-        // «Продолжить» передаёт сырой объект из ответа API, а $state хранит прокси.
-        // Ссылки не равны, хотя это та же озвучка — тогда список серий так и не запрашивается.
-        if (selectedDubber?.id !== dubber.id) return;
-        const nextRequest = episodeRequest + 1;
-        if (await selectSource(src, false, focusEpisode) || episodeRequest !== nextRequest) break;
+      const preferred = srcs.find((source) => source.id === preferredSourceId);
+      if (preferred) {
+        await selectSource(preferred, false, focusEpisode);
+        return;
       }
       await tick();
       focusTvModalContent();
     } catch {
-      if (request !== episodeRequest || modalView !== 'episodes') return;
+      if (request !== episodeRequest || modalView !== 'sources') return;
       episodesLoading = false;
       episodesError = 'Ошибка загрузки источников';
     }
@@ -802,6 +886,7 @@
     if (!selectedDubber) return false;
     const request = ++episodeRequest;
     const dubberId = selectedDubber.id;
+    modalView = 'episodes';
     selectedSourceId = source.id;
     selectedEpisodePos = null;
     if (resetSearch) searchInput = '';
@@ -1078,6 +1163,10 @@
       sourcesLoading = false;
       sourcesError = !Number.isFinite(releaseId) || releaseId <= 0 ? 'Неверный релиз' : 'API недоступно';
     } else {
+      void api.release.info?.(releaseId).then((infoRes: { release?: unknown }) => {
+        lastEpisodeTypeUpdateId = readLastEpisodeTypeUpdateId(infoRes?.release ?? infoRes);
+      }).catch(() => {});
+
       api.release.getDubbers(releaseId)
         .then(async (res: { types?: Dubber[] }) => {
           const types = (res?.types ?? []).filter(d => !isDubberBlacklisted(String(d.name ?? '')));
@@ -1089,10 +1178,6 @@
           dubbers = sortDubbersPinnedFirst(types);
           await tick();
           focusTvModalContent();
-
-          void api.release.info?.(releaseId).then((infoRes: { release?: unknown }) => {
-            lastEpisodeTypeUpdateId = readLastEpisodeTypeUpdateId(infoRes?.release ?? infoRes);
-          }).catch(() => {});
 
           // «Продолжить»: сразу последняя озвучка и серия, которые смотрел пользователь.
           const targetDubber = target && types.find((d) => d.id === target.dubberId);
@@ -1112,17 +1197,13 @@
             return;
           }
 
-          if (cached.modalView === 'episodes' && cached.selectedDubberId != null) {
+          if ((cached.modalView === 'sources' || cached.modalView === 'episodes') && cached.selectedDubberId != null) {
             const dubber = types.find((d) => d.id === cached.selectedDubberId);
             if (!dubber) return;
-            await openDubber(dubber);
-            if (cached.selectedSourceId != null) {
-              const source = sources.find((s) => s.id === cached.selectedSourceId);
-              if (source) {
-                await selectSource(source, false);
-                searchInput = cached.searchInput;
-                selectedEpisodePos = cached.selectedEpisodePos;
-              }
+            await openDubber(dubber, cached.modalView === 'episodes' ? cached.selectedSourceId ?? undefined : undefined);
+            if (modalView === 'episodes' && selectedDubber?.id === dubber.id) {
+              searchInput = cached.searchInput;
+              selectedEpisodePos = cached.selectedEpisodePos;
             }
           }
         })
@@ -1134,6 +1215,7 @@
   });
 
   onDestroy(() => {
+    sourceCheckGeneration++;
     // отписка от загрузок выполняется ниже вместе с остальной очисткой
     stopDlWatch?.();
     cancelExternalPlaylistPrep();
@@ -1166,6 +1248,8 @@
         <h2 class="watch-modal__title">
           {#if modalView === 'updates'}
             Статистика добавления
+          {:else if modalView === 'sources'}
+            Выберите источник
           {:else if modalView === 'episodes' && selectedDubber}
             {selectedDubber.name}
           {:else}
@@ -1174,17 +1258,26 @@
         </h2>
         {#if modalView === 'variants'}
           <p class="watch-modal__subtitle">{releaseTitle}</p>
+        {:else if modalView === 'sources' && selectedDubber}
+          <p class="watch-modal__subtitle">{selectedDubber.name}</p>
         {:else if modalView === 'episodes' && selectedDubber}
           {@const viewCountRaw = selectedDubber.view_count ?? selectedDubber.viewCount ?? 0}
           {@const viewCount = typeof viewCountRaw === 'number' ? viewCountRaw : parseInt(String(viewCountRaw), 10) || 0}
           <p class="watch-modal__subtitle">
-            {formatNum(viewCount)} просмотров · {isSubDubber(selectedDubber) ? 'субтитры' : 'озвучка'} · {liveEpisodeTotalLabel || dubberEpisodeLabel(selectedDubber)}
+            {#if selectedSource}{sourcePlayerLabel(selectedSource.name, selectedDubber.name)} · {/if}{#if !selectedDubber.is_external}{formatNum(viewCount)} просмотров · {/if}{isSubDubber(selectedDubber) ? 'субтитры' : 'озвучка'} · {liveEpisodeTotalLabel || dubberEpisodeLabel(selectedDubber)}
           </p>
         {/if}
       </div>
       <div class="watch-modal__head-actions">
         {#if modalView === 'variants'}
           <button type="button" class="watch-modal__head-icon" aria-label="Статистика добавления" title="Статистика добавления" onclick={() => openUpdatesView()}>
+            {@html refreshIconSvg}
+          </button>
+        {:else if modalView === 'sources' && sources.some(({ id }) => !sourceReady(sourceAvailability[id]))}
+          <button type="button" class="watch-modal__head-icon"
+            aria-label="Проверить источники заново" title="Проверить источники заново"
+            disabled={sources.some(({ id }) => sourceAvailability[id] === 'checking')}
+            onclick={retrySourceChecks}>
             {@html refreshIconSvg}
           </button>
         {:else if modalView === 'updates'}
@@ -1248,21 +1341,58 @@
             {/if}
           </div>
         </div>
-      {:else if modalView === 'episodes'}
-        {#if sources.length > 0}
-          <div class="watch-modal__source-pills watch-modal__source-pills--standalone" aria-label="Источники">
+      {:else if modalView === 'sources'}
+        {#if episodesLoading}
+          <div class="watch-modal__loading watch-modal__loading--center">Загрузка источников…</div>
+        {:else if episodesError}
+          <div class="watch-modal__loading watch-modal__loading--center">{episodesError}</div>
+        {:else}
+          <div class="watch-modal__source-scroll" data-uiv2-scroll>
+          <div class="watch-modal__variant-list watch-modal__source-grid" aria-label="Источники">
             {#each sources as source (source.id)}
+              {@const status = sourceAvailability[source.id] ?? 'checking'}
+              {@const catalog = sourceCatalog(source)}
+              {@const playerName = sourcePlayerLabel(source.name.replace(` (${catalog})`, ''), selectedDubber?.name)}
+              {@const count = normalizeEpisodeCount(source as Record<string, unknown>)}
+              {@const warned = catalog === 'YummyAnime' && playerName === 'Alloha'}
+              {@const qualityLabel = formatQualityHeight(Math.max(qualityHeight(source.max_quality), qualityHeight(source.quality),
+                checkedQualities[`${releaseId}:${selectedDubber?.id}`]?.[source.id] ?? 0))}
+              <div class="watch-modal__source-entry">
               <button
                 type="button"
-                class="watch-modal__source-pill"
-                class:watch-modal__source-pill--active={source.id === selectedSourceId}
-                onclick={() => selectSource(source)}
+                class="watch-modal__variant-row watch-modal__source-card"
+                class:watch-modal__source-card--selected={source.id === selectedSourceId}
+                class:watch-modal__source-card--unavailable={!sourceReady(status) && status !== 'checking'}
+                class:watch-modal__source-card--warned={warned}
+                disabled={!sourceReady(status)}
+                onclick={() => { if (sourceReady(sourceAvailability[source.id])) void selectSource(source); }}
               >
-                {sourceLabel(source)}
+                <span class="watch-modal__variant-info">
+                  <span class="watch-modal__source-catalog">{catalog}</span>
+                  <span class="watch-modal__variant-name">{playerName}</span>
+                  <span class="watch-modal__source-meta">
+                    {#if count != null}<span class="watch-modal__variant-ep">{count} эп. ·</span>{/if}
+                    <span class="watch-modal__source-status" data-status={status}>{sourceAvailabilityLabels[status]}</span>
+                    {#if qualityLabel}<span class="watch-modal__quality-badge">{qualityLabel}</span>{/if}
+                  </span>
+                </span>
+                {#if sourceReady(status)}
+                  <span class="watch-modal__source-card-next" aria-hidden="true">{@html backIconSvg}</span>
+                {/if}
               </button>
+              {#if warned}
+                <span class="watch-modal__source-warning">
+                  <UiV2Tooltip text="Alloha ограничивает частоту запросов. Из-за этого возможны сбои воспроизведения.">
+                    <button type="button" aria-label="Alloha ограничивает частоту запросов. Возможны сбои воспроизведения.">!</button>
+                  </UiV2Tooltip>
+                </span>
+              {/if}
+              </div>
             {/each}
           </div>
+          </div>
         {/if}
+      {:else if modalView === 'episodes'}
         {#if episodesLoading && episodes.length === 0}
           <div class="watch-modal__loading watch-modal__loading--center">Загрузка серий…</div>
         {:else if episodesError}
@@ -1436,6 +1566,7 @@
                             class="watch-modal__episode-cover watch-modal__episode-cover--alt"
                             alt=""
                             decoding="async"
+                            fetchpriority="low"
                             use:cachedCover={frame.alt}
                           />
                         {/if}
@@ -1449,6 +1580,9 @@
                       data-tv-longpress-hint="Отметить серию"
                       onclick={() => handleEpisodePlay(ep.position)}
                     >
+                      {#if isFillerEpisode(releaseTitle, ep)}
+                        <span class="watch-modal__episode-filler">Филлер</span>
+                      {/if}
                       {#if unnumbered}
                         <span class="watch-modal__episode-name watch-modal__episode-name--solo">
                           {ep.name?.trim() || 'Смотреть онлайн'}
@@ -1560,7 +1694,8 @@
                   {@const viewCount = typeof viewCountRaw === 'number' ? viewCountRaw : parseInt(String(viewCountRaw), 10) || 0}
                   {@const iconUrl = d.icon ? resolveCdnAssetUrl(ensureHttps(String(d.icon))) : ''}
                   {@const epLabel = dubberEpisodeLabel(d)}
-                  {@const qualityLabel = formatDubberQuality(d.quality)}
+                  {@const qualityLabel = formatQualityHeight(Math.max(qualityHeight(d.quality), catalogQualities[d.id] ?? 0,
+                    ...Object.values(checkedQualities[`${releaseId}:${d.id}`] ?? {})))}
                   {@const pinned = d.pinned === true}
                   {@const pinLabel = `${pinned ? 'Открепить' : 'Закрепить'} ${isSubDubber(d) ? 'субтитры' : 'озвучку'}`}
                   {@const isNew = isDubberNovelty(d.id, lastEpisodeTypeUpdateId)}
@@ -1607,12 +1742,7 @@
                     {/if}
 
                     <span class="watch-modal__variant-info">
-                      <span class="watch-modal__variant-name-row">
-                        <span class="watch-modal__variant-name">{d.name}</span>
-                        {#if isNew}
-                          <span class="watch-modal__new-badge">НОВИНКА</span>
-                        {/if}
-                      </span>
+                      <span class="watch-modal__variant-name">{d.name}</span>
                       <span class="watch-modal__variant-meta">
                         {#if epLabel}
                           <span class="watch-modal__variant-ep">{epLabel}</span>
@@ -1630,10 +1760,17 @@
                       {/if}
                     </span>
 
-                    <span class="watch-modal__variant-views-badge">
-                      {@html eyeIconSvg}
-                      {fmtViewsShort(viewCount)}
-                    </span>
+                    {#if !d.is_external}
+                      <span class="watch-modal__variant-stats">
+                        {#if isNew}
+                          <span class="watch-modal__new-badge">Новинка</span>
+                        {/if}
+                        <span class="watch-modal__variant-views-badge">
+                          {@html eyeIconSvg}
+                          {fmtViewsShort(viewCount)}
+                        </span>
+                      </span>
+                    {/if}
                   </div>
                 {/each}
               {/if}

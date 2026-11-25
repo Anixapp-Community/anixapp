@@ -1,111 +1,143 @@
-/** Episode frames: memory for this session, Cache API across restarts. */
+type CoverListener = (visible: boolean) => void;
 
-const CACHE_NAME = 'anix-episode-covers-v1';
-const memory = new Map<string, string>();
-const inflight = new Map<string, Promise<string>>();
-const shown = new Set<string>();
+const viewports = new WeakMap<Element, {
+  observer: IntersectionObserver;
+  items: Map<Element, CoverListener>;
+}>();
 
-async function resolveCover(url: string): Promise<string> {
-  const hit = memory.get(url);
-  if (hit) return hit;
-  const pending = inflight.get(url);
-  if (pending) return pending;
-
-  const job = (async () => {
-    try {
-      if (typeof caches === 'undefined') return url;
-      const cache = await caches.open(CACHE_NAME);
-      let res = await cache.match(url);
-      if (!res) {
-        const fetched = await fetch(url, { credentials: 'same-origin' });
-        if (!fetched.ok) return '';
-        await cache.put(url, fetched.clone());
-        res = fetched;
-      }
-      const blobUrl = URL.createObjectURL(await res.blob());
-      memory.set(url, blobUrl);
-      return blobUrl;
-    } catch {
-      return url;
-    } finally {
-      inflight.delete(url);
+function observeCover(root: Element, img: HTMLImageElement, update: CoverListener) {
+  let viewport = viewports.get(root);
+  if (!viewport) {
+    const items = new Map<Element, CoverListener>();
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) items.get(entry.target)?.(entry.isIntersecting);
+    }, { root });
+    viewport = { items, observer };
+    viewports.set(root, viewport);
+  }
+  const { observer, items } = viewport;
+  items.set(img, update);
+  observer.observe(img);
+  return () => {
+    observer.unobserve(img);
+    items.delete(img);
+    if (!items.size) {
+      observer.disconnect();
+      viewports.delete(root);
     }
-  })();
-
-  inflight.set(url, job);
-  return job;
-}
-
-function paint(img: HTMLImageElement, src: string, key: string, instant: boolean) {
-  if (img.getAttribute('src') !== src) img.src = src;
-  const show = () => {
-    shown.add(key);
-    if (instant) img.classList.add('watch-modal__episode-cover--instant');
-    img.classList.add('watch-modal__episode-cover--on');
   };
-  if (img.complete && img.naturalWidth > 0) show();
-  else img.addEventListener('load', show, { once: true });
 }
 
-/** Puts a cached frame on an `<img>`. Already seen URLs appear without the fade. */
 export function cachedCover(img: HTMLImageElement, url: string) {
+  const on = 'watch-modal__episode-cover--on';
+  const alternate = img.classList.contains('watch-modal__episode-cover--alt');
+  const card = img.closest<HTMLElement>('.watch-modal__episode-card');
+  const root = img.closest('.page__scroll');
+  const observed = !!root && typeof IntersectionObserver !== 'undefined';
+  let visible = !observed;
+  let request: AbortController | undefined;
+  let blobUrl: string | undefined;
   let current = url;
-  let token = 0;
-  let observer: IntersectionObserver | null = null;
+  let failed = false;
+  let retried = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const stopWatch = () => {
-    observer?.disconnect();
-    observer = null;
+  img.loading = observed ? 'eager' : 'lazy';
+
+  function clearRequest() {
+    request?.abort();
+    request = undefined;
+    img.removeAttribute('src');
+    if (blobUrl) URL.revokeObjectURL(blobUrl);
+    blobUrl = undefined;
+  }
+
+  function schedule() {
+    clearTimeout(timer);
+    const active = !alternate || card?.matches(':hover, :focus-within, :has([data-tv-focus="true"])');
+    img.fetchPriority = !alternate ? 'high' : 'low';
+    if (!active || !visible) {
+      if (!img.classList.contains(on) && !(img.complete && img.naturalWidth > 0)) clearRequest();
+      return;
+    }
+    if (failed) {
+      if (!retried) {
+        timer = setTimeout(() => {
+          retried = true;
+          failed = false;
+          clearRequest();
+          void start();
+        }, 650);
+      }
+    } else if (!request && !img.hasAttribute('src')) {
+      void start();
+    }
+  }
+
+  async function start() {
+    if (!observed) {
+      img.src = current;
+      return;
+    }
+    const controller = new AbortController();
+    request = controller;
+    try {
+      const options = {
+        signal: controller.signal,
+        priority: alternate ? 'low' as const : 'high' as const,
+      };
+      const response = await fetch(current, options);
+      if (!response.ok) throw new Error(`Cover HTTP ${response.status}`);
+      const blob = await response.blob();
+      if (controller.signal.aborted) return;
+      blobUrl = URL.createObjectURL(blob);
+      img.src = blobUrl;
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      // Permit direct image loading on servers that disallow cross-origin fetch.
+      if (error instanceof TypeError) img.src = current;
+      else onError();
+    } finally {
+      if (request === controller) request = undefined;
+    }
+  }
+
+  const show = () => img.classList.add(on);
+  const onError = () => {
+    failed = true;
+    schedule();
   };
-
-  const run = (next: string) => {
-    const my = ++token;
-    current = next;
-    stopWatch();
-    img.classList.remove('watch-modal__episode-cover--on');
-
-    const mem = memory.get(next);
-    if (mem) {
-      paint(img, mem, next, true);
-      return;
-    }
-    if (shown.has(next)) {
-      paint(img, next, next, true);
-      return;
-    }
-
-    const start = () => {
-      void resolveCover(next).then((src) => {
-        if (my !== token || !src) return;
-        paint(img, src, next, false);
-      });
-    };
-
-    const root = img.closest<HTMLElement>('.page__scroll');
-    if (!root || typeof IntersectionObserver === 'undefined') {
-      start();
-      return;
-    }
-    observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        stopWatch();
-        start();
-      },
-      { root, rootMargin: '480px' },
-    );
-    observer.observe(img);
-  };
-
-  run(url);
+  img.addEventListener('load', show);
+  img.addEventListener('error', onError);
+  const unobserve = observed && root ? observeCover(root, img, (intersects) => {
+    visible = intersects;
+    schedule();
+  }) : undefined;
+  const interactionEvents = ['pointerenter', 'pointerleave', 'focusin', 'focusout'];
+  if (alternate) for (const event of interactionEvents) card?.addEventListener(event, schedule);
+  // TV focus is represented by an attribute and may not move DOM focus.
+  const tvFocus = alternate && card?.closest('.watch-modal--tv') && typeof MutationObserver !== 'undefined'
+    ? new MutationObserver(schedule) : undefined;
+  if (tvFocus && card) tvFocus.observe(card, { subtree: true, attributes: true, attributeFilter: ['data-tv-focus'] });
+  schedule();
 
   return {
     update(next: string) {
-      if (next && next !== current) run(next);
+      if (current === next) return;
+      current = next;
+      failed = retried = false;
+      img.classList.remove(on);
+      clearRequest();
+      schedule();
     },
     destroy() {
-      token += 1;
-      stopWatch();
+      clearTimeout(timer);
+      clearRequest();
+      unobserve?.();
+      tvFocus?.disconnect();
+      if (alternate) for (const event of interactionEvents) card?.removeEventListener(event, schedule);
+      img.removeEventListener('load', show);
+      img.removeEventListener('error', onError);
     },
   };
 }

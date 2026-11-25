@@ -1,6 +1,17 @@
 /** Источники озвучки: официальный список + скрытые из episode/updates. */
 
-export type DubberSourceRef = { id: number; name: string; episodes_count?: number };
+export type DubberSourceRef = { id: number; name: string; episodes_count?: number; max_quality?: number; quality?: unknown };
+
+export function sourcePlayerLabel(name: string, dubberName = ''): string {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const player = normalize(name);
+  if (/^(?:studiomir|студиямир|tsmplayer|tsm)$/.test(player)) return 'TSM';
+  if (/^(?:aniliberty|anilibrty|liberty)$/.test(player)) return 'Liberty';
+  if (/^(?:anilibria(?:tv)?|libria)$/.test(player)) {
+    return /^(?:aniliberty|anilibrty)$/.test(normalize(dubberName)) ? 'Liberty' : 'Libria';
+  }
+  return name;
+}
 
 /** Сообщение, когда у озвучки нет рабочей серии / источника. */
 export const NO_EPISODE_PICK_OTHER_DUB = 'Серии нет. Выберите другую озвучку';
@@ -20,7 +31,7 @@ type ReleaseApi = {
   getDubberSources?: (
     releaseId: number,
     dubberId: number,
-  ) => Promise<{ sources?: Array<{ id: number; name: string; episodes_count?: number }> }>;
+  ) => Promise<{ sources?: DubberSourceRef[] }>;
   getEpisodeUpdates?: (
     releaseId: number,
     page?: number,
@@ -135,7 +146,7 @@ export async function listPlayableDubberSources(
         .map((s) => {
           const src = asSource(s.id, s.name);
           const count = episodeCount(s.episodes_count);
-          return src && count != null ? { ...src, episodes_count: count } : src;
+          return src ? { ...src, episodes_count: count ?? undefined, max_quality: s.max_quality, quality: s.quality } : null;
         })
         .filter((s): s is DubberSourceRef => s != null),
     );

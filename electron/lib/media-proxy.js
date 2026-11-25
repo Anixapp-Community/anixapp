@@ -88,6 +88,7 @@ function refererFor(url, overrideRef) {
   if (host.includes('myvi')) return 'https://www.myvi.top/';
   if (/secvideo1|csst\.online|sstrge/.test(host)) return 'https://secvideo1.online/';
   if (host.includes('sovetromantica')) return 'https://sovetromantica.com/';
+  if (host.includes('tut-video')) return 'https://player.aksor.tv/';
   return 'https://anixart.tv/';
 }
 
@@ -229,6 +230,27 @@ function isPlaylistUrl(url, contentType) {
   return false;
 }
 
+function isDashManifestUrl(url, contentType) {
+  const ct = String(contentType || '').toLowerCase();
+  if (ct.includes('dash+xml')) return true;
+  return /\.mpd(?:[?#]|$)/i.test(url);
+}
+
+function rewriteMpd(text, baseUrl, ref, cookie) {
+  const toProxy = (raw) => {
+    try {
+      const abs = new URL(raw, baseUrl).href;
+      if (!isAllowedMediaUrl(abs)) return raw;
+      return proxyPath(abs, ref, cookie).replace(/%24([A-Za-z0-9_%-]+)%24/g, '$$$1$$');
+    } catch {
+      return raw;
+    }
+  };
+  return String(text)
+    .replace(/(initialization|media)="([^"]+)"/gi, (_, attr, val) => `${attr}="${toProxy(val)}"`)
+    .replace(/<BaseURL>([^<]+)<\/BaseURL>/gi, (_, val) => `<BaseURL>${toProxy(val.trim())}</BaseURL>`);
+}
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -242,22 +264,40 @@ async function drain(res) {
   try { await res.arrayBuffer(); } catch { /* ignore */ }
 }
 
-async function fetchOnce(url, method, headers) {
+async function fetchOnce(url, method, headers, clientSignal) {
   let timeoutMs = FETCH_TIMEOUT_ATTEMPT_MS;
   try {
     if (isKodikEdgeHost(new URL(url).hostname)) timeoutMs = FETCH_TIMEOUT_EDGE_MS;
   } catch { /* keep default */ }
-  return fetch(url, {
-    method,
-    headers,
-    redirect: 'manual',
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new DOMException('TimeoutError', 'TimeoutError')), timeoutMs);
+  const onClientAbort = () => controller.abort(clientSignal?.reason);
+  if (clientSignal) {
+    if (clientSignal.aborted) {
+      clearTimeout(timer);
+      controller.abort(clientSignal.reason);
+    } else {
+      clientSignal.addEventListener('abort', onClientAbort, { once: true });
+    }
+  }
+  try {
+    const res = await fetch(url, {
+      method,
+      headers,
+      redirect: 'manual',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
 }
 
-async function fetchMedia(url, method, headers, hops = 0) {
+async function fetchMedia(url, method, headers, hops = 0, clientSignal = null) {
   if (hops > 6) throw new Error('Too many redirects');
-  const res = await fetchOnce(url, method, headers);
+  const res = await fetchOnce(url, method, headers, clientSignal);
   if (![301, 302, 303, 307, 308].includes(res.status)) return { res, finalUrl: url };
 
   const loc = res.headers.get('location');
@@ -276,24 +316,24 @@ async function fetchMedia(url, method, headers, hops = 0) {
   // shadow.* — пробуем HLS на origin (legacy)
   if (isShadowHost(next) && isKodikCdn(url)) {
     const hls = toKodikHlsUrl(url);
-    if (hls && hls !== url) return fetchMedia(hls, method, headers, hops + 1);
+    if (hls && hls !== url) return fetchMedia(hls, method, headers, hops + 1, clientSignal);
   }
 
-  return fetchMedia(next, method, headers, hops + 1);
+  return fetchMedia(next, method, headers, hops + 1, clientSignal);
 }
 
 /**
  * Try URL (+ Kodik pN mirrors). Returns first 200/206, or null.
  * Network / 5xx / edge-unreachable → next mirror (client never sees mid-hop 502).
  */
-async function fetchMediaResilient(url, method, headers) {
+async function fetchMediaResilient(url, method, headers, clientSignal = null) {
   const candidates = solodMirrorCandidates(url);
   let lastErr = null;
   let lastStatus = 0;
 
   for (const cand of candidates) {
     try {
-      const { res, finalUrl } = await fetchMedia(cand, method, headers);
+      const { res, finalUrl } = await fetchMedia(cand, method, headers, 0, clientSignal);
       if (res.ok || res.status === 206) {
         rememberSolodHost(cand);
         rememberSolodHost(finalUrl);
@@ -307,6 +347,7 @@ async function fetchMediaResilient(url, method, headers) {
       await drain(res);
     } catch (err) {
       lastErr = err;
+      if (clientSignal?.aborted) break;
       // try next mirror
     }
   }
@@ -319,7 +360,28 @@ async function fetchMediaResilient(url, method, headers) {
   throw new Error('Upstream fetch failed');
 }
 
+const ANIME_LIB_UA =
+  'LibAppC/2.0.2 (Android 13; 2201116PG; POCO veux; ru) Complete/3066669';
+
+function isAnimeLibMediaHost(host) {
+  const h = String(host || '').replace(/^www\./, '').toLowerCase();
+  return h === 'cdnlibs.org' || h.endsWith('.cdnlibs.org') || h === 'imglib.info' || h.endsWith('.imglib.info');
+}
+
 function mediaRequestHeaders(url, refOverride) {
+  let host = '';
+  try { host = new URL(url).host; } catch { /* ignore */ }
+  if (isAnimeLibMediaHost(host)) {
+    return {
+      Accept: '*/*;q=0.8',
+      'Site-Id': '5',
+      Origin: 'animelib.org',
+      Referer: 'animelib.org',
+      'User-Agent': ANIME_LIB_UA,
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept-Encoding': 'identity',
+    };
+  }
   return {
     'User-Agent': BROWSER_UA,
     Referer: refererFor(url, refOverride),
@@ -341,14 +403,18 @@ async function proxyMediaRequest(req, res, targetUrl, refOverride, cookieOverrid
   if (req.headers.range) headers.Range = req.headers.range;
 
   const method = req.method === 'HEAD' ? 'HEAD' : 'GET';
+  const clientAbort = new AbortController();
+  res.on('close', () => {
+    if (!res.writableFinished) clientAbort.abort();
+  });
   let upstream;
   let finalUrl = preferred;
   try {
-    let got = await fetchMediaResilient(preferred, method, headers);
+    let got = await fetchMediaResilient(preferred, method, headers, clientAbort.signal);
     // If HLS rewrite failed with hard 4xx, try original non-HLS URL once.
     if ((!got.res.ok && got.res.status !== 206) && preferred !== targetUrl) {
       await drain(got.res);
-      got = await fetchMediaResilient(targetUrl, method, headers);
+      got = await fetchMediaResilient(targetUrl, method, headers, clientAbort.signal);
     }
     upstream = got.res;
     finalUrl = got.finalUrl || preferred;
@@ -383,6 +449,18 @@ async function proxyMediaRequest(req, res, targetUrl, refOverride, cookieOverrid
     return;
   }
 
+  if (upstream.ok && isDashManifestUrl(finalUrl, ct) && req.method !== 'HEAD') {
+    const text = await upstream.text();
+    const rewritten = rewriteMpd(text, finalUrl, refOverride, cookie);
+    res.writeHead(200, {
+      ...corsHeaders(),
+      'Content-Type': 'application/dash+xml',
+      'Cache-Control': 'no-store',
+    });
+    res.end(rewritten);
+    return;
+  }
+
   // Non-OK after resilient fetch (hard 4xx) — forward status.
   if (!upstream.ok && upstream.status !== 206) {
     const body = Buffer.from(await upstream.arrayBuffer().catch(() => new ArrayBuffer(0)));
@@ -397,12 +475,16 @@ async function proxyMediaRequest(req, res, targetUrl, refOverride, cookieOverrid
 
   const out = { ...corsHeaders() };
   if (ct) out['Content-Type'] = ct;
-  // Do NOT forward Content-Length when piping: mid-body abort + stale length
-  // → net::ERR_CONTENT_LENGTH_MISMATCH. Chunked fails cleanly → hls.js retries.
   const cr = upstream.headers.get('content-range');
   if (cr) out['Content-Range'] = cr;
+  const cl = upstream.headers.get('content-length');
+  // Progressive video (<video src>) requires Content-Length to advertise seekable byte bounds;
+  // omit it on generic HLS/stream piping so mid-body abort retries cleanly.
+  if (cl && (upstream.status === 206 || cr || req.method === 'HEAD' || /^video\/(mp4|webm|quicktime|x-matroska)/i.test(ct))) {
+    out['Content-Length'] = cl;
+  }
   const ar = upstream.headers.get('accept-ranges');
-  out['Accept-Ranges'] = ar || 'bytes';
+  out['Accept-Ranges'] = /\bbytes\b/i.test(ar || '') ? 'bytes' : (ar || 'bytes');
   const cd = upstream.headers.get('content-disposition');
   if (cd) out['Content-Disposition'] = cd;
 

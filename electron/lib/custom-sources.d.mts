@@ -9,8 +9,11 @@ type ReleaseEndpoints = {
 export function createCustomSources(options?: {
   fetcher?: typeof fetch;
   fetchMedia?: typeof fetch;
-  aniTypeToken?: string;
+  aniLibToken?: string;
+  animeLibVideoBaseUrl?: string;
+  animeLibVideoPathPrefix?: string;
   resolveAlloha?: (url: string) => Promise<string | null>;
+  resolveAnimeLibStream?: (url: string) => Promise<string | null>;
   prepareStream?: (url: string) => string | null;
 }): {
   getDubbers(release: ReleaseEndpoints, releaseId: number): Promise<unknown>;

@@ -48,7 +48,7 @@ function hostNeedsEmbedReferer(host: string): boolean {
 export function refererForMediaUrl(url: string): string | undefined {
   if (!embedReferer) return undefined;
   try {
-    const host = new URL(url.startsWith('http') ? url : `https:${url}`).host;
+    const host = new URL(url.startsWith('//') ? `https:${url}` : url).host;
     if (hostNeedsEmbedReferer(host)) return embedReferer;
   } catch { /* ignore */ }
   return undefined;

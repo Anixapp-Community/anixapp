@@ -2,6 +2,7 @@
 
 const { BrowserWindow, session } = require('electron');
 const { createServer } = require('node:http');
+const { fetchSourceStream } = require('./source-stream-protocol');
 
 let resolverSession;
 const pending = new Map();
@@ -51,15 +52,43 @@ function resolveAllohaStream(embedUrl) {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end(html);
     });
+    const seen = new Set();
+    let fallbackManifest = null;
+    let settleTimer;
+    let bestHeightCount = 0;
     const finish = (manifest = null) => {
       if (!pending.delete(id)) return;
       clearTimeout(timer);
+      clearTimeout(settleTimer);
       server.close();
       if (!window.isDestroyed()) window.destroy();
       resolve(manifest);
     };
-    const timer = setTimeout(finish, 9000);
-    pending.set(id, finish);
+    const timer = setTimeout(() => finish(fallbackManifest), 9000);
+    pending.set(id, async (manifest) => {
+      if (seen.has(manifest) || seen.size >= 4) return;
+      seen.add(manifest);
+      if (!fallbackManifest) {
+        fallbackManifest = manifest;
+        settleTimer = setTimeout(() => finish(fallbackManifest), 1400);
+      }
+      try {
+        const response = await fetchSourceStream(manifest, { signal: AbortSignal.timeout(1200) });
+        if (!response.ok) {
+          await response.body?.cancel();
+          return;
+        }
+        const playlist = await response.text();
+        if (!playlist.trimStart().startsWith('#EXTM3U')) return;
+        const heights = new Set([...playlist.matchAll(/RESOLUTION=\d+x(\d+)/gi)].map((match) => match[1]));
+        if (heights.size > bestHeightCount) {
+          bestHeightCount = heights.size;
+          fallbackManifest = manifest;
+        }
+      } catch {
+        // Keep the manifest observed in the original player if probing fails.
+      }
+    });
     window.once('closed', () => finish());
     webContents.setAudioMuted(true);
     webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

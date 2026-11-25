@@ -32,7 +32,7 @@ export const watchModalReleaseTitle = writable<string>('');
 
 export interface WatchModalCachedState {
   releaseId: number;
-  modalView: 'variants' | 'episodes' | 'updates';
+  modalView: 'variants' | 'sources' | 'episodes' | 'updates';
   variantFilter: 'all' | 'voice' | 'sub';
   selectedDubberId: number | null;
   selectedSourceId: number | null;

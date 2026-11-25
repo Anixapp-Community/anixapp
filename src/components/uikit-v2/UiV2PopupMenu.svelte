@@ -43,6 +43,8 @@
     step?: number;
     /** Подпись значения: у слайдера «1.00×», у обычного пункта — текущий выбор справа («Любой год») */
     valueText?: string;
+    badgeText?: string;
+    badgeTone?: 'accent';
     minLabel?: string;
     maxLabel?: string;
     /** Порог «быстрого» режима / предупреждения */
@@ -1045,6 +1047,9 @@
           <span class="uiv2-popup-menu__icon uiv2-popup-menu__icon--empty" aria-hidden="true"></span>
         {/if}
         <span class="uiv2-popup-menu__label">{item.label}</span>
+        {#if item.badgeText}
+          <span class="uiv2-popup-menu__badge" class:uiv2-popup-menu__badge--accent={item.badgeTone === 'accent'}>{item.badgeText}</span>
+        {/if}
         {#if item.valueText}
           <span class="uiv2-popup-menu__value">{item.valueText}</span>
         {/if}

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import type { EpisodeItem, DubberItem, DownloadedEpisodeItem, NextEpAltDub, PopoverType, SourceItem } from '../_types';
+  import { qualityHeight } from '../../../utils/dubber-meta';
   import type { Anime4kIntensity, Anime4kTargetRes, Anime4kType } from '../core/anime4k-presets';
   import type { SurroundMode, EqGains, EqBandId } from '../core/surround-audio';
   import type { SkipMarkKind, TimelineSausage } from '../_skipMarks';
@@ -133,6 +134,7 @@
     dubberName={props.dubberName}
     sourceName={props.sourceName}
     episodes={props.episodes}
+    currentEpisodeQuality={Math.max(qualityHeight(props.currentQuality), ...Object.keys(props.availableQualities).map(qualityHeight))}
     dubbers={props.dubbers}
     sources={props.sources}
     downloadedEpisodes={props.downloadedEpisodes}

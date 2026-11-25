@@ -2,6 +2,16 @@
 
 export type DubberQuality = 1 | 2 | 3;
 
+export function qualityHeight(value: unknown): number {
+  const token = String(value ?? '').trim().toLowerCase();
+  const named: Record<string, number> = { '1': 1080, '2': 1440, '3': 2160, hd: 720, fhd: 1080, qhd: 1440, uhd: 2160, '4k': 2160 };
+  return named[token] ?? (/^(?:[1-9]\d{2,3})p?$/.test(token) ? parseInt(token, 10) : 0);
+}
+
+export function formatQualityHeight(height: number): string | null {
+  return height === 2160 ? '4K' : height === 1440 ? 'QHD' : height > 0 ? `${height}p` : null;
+}
+
 /** Mobile QualityBadge: 1=FHD, 2=QHD, 3=4K. */
 export function formatDubberQuality(quality: unknown): string | null {
   const q = typeof quality === 'number' ? quality : Number(quality);

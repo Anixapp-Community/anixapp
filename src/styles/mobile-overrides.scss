@@ -243,6 +243,45 @@ html.mobile-mode {
     &__variant-name { font: 500 16px/1.25 var(--m-font) !important; }
     &__variant-ep { font: 400 13px/1.3 var(--m-font) !important; color: var(--m-text-2) !important; }
     &__variant-views-badge { align-self: center !important; color: var(--m-text-2) !important; font: 400 13px/1 var(--m-font) !important; }
+    &__variants &__variant-row {
+      border-radius: var(--m-radius-md) !important;
+    }
+    &__variant-stats {
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.25rem;
+
+      .watch-modal__variant-views-badge { align-self: flex-end !important; }
+    }
+    &__variant-list.watch-modal__source-grid {
+      width: 100%;
+      max-width: 64rem;
+      margin-inline: auto;
+      box-sizing: border-box;
+      padding: var(--m-space-3) var(--m-gutter) max(var(--m-space-5), var(--safe-bottom)) !important;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+    }
+    &__variant-row.watch-modal__source-card {
+      padding-inline: var(--m-space-4) !important;
+
+      &.watch-modal__source-card--warned {
+        padding-inline-end: 2.75rem !important;
+      }
+
+      &.watch-modal__source-card--unavailable:disabled {
+        background: var(--wm-source-card-bg) !important;
+      }
+    }
+    &__source-warning {
+      top: 0.2rem;
+      right: 0.2rem;
+
+      button {
+        width: 36px;
+        height: 36px;
+        background: radial-gradient(circle, #eab54b 0 8px, transparent 8.5px);
+      }
+    }
     &__variant-row, &__episode-card, &__episode-main { user-select: none; -webkit-touch-callout: none; transition: none !important; contain: layout paint; }
     &__variant-pinmark { position: absolute; top: var(--m-space-2); right: var(--m-space-2); color: var(--m-primary); }
     &__desk-hint { margin: var(--m-space-3) 0 0 !important; flex-basis: 100%; color: var(--m-text-3); font: 400 13px/1.3 var(--m-font) !important; }
