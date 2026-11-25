@@ -10,7 +10,7 @@
   import { createClickOrDblclick } from './_clickGate';
   import { checkEpisodeAvailability } from './source-availability';
   import { setEmbedMediaContext } from './core/hls-media-context';
-  import { normalizeSkipMarks, mergeSkipMarks, clampSkipMarksToDuration, skipMarkActive, endingIsAtEpisodeEnd, buildTimelineSausages, type SkipMarkKind, type SkipMarks } from './_skipMarks';
+  import { normalizeSkipMarks, mergeSkipMarks, clampSkipMarksToDuration, skipMarkActive, endingIsAtEpisodeEnd, buildTimelineSausages, resolveVerifiedSkipMarks, type SkipMarkKind, type SkipMarks } from './_skipMarks';
   import { getSkipAutoPref, setSkipAutoPref } from './_skipPrefs';
   import { pathToLocalMediaUrl } from '../../utils/local-media-url';
   import { loadAppSettings, saveAppSettings } from '../../utils/app-settings';
@@ -279,7 +279,8 @@
   let lastEpisodeTypeUpdateId = $state<number | null>(null);
   let playbackAlt = $state<PlaybackAlt | null>(null);
   let playbackAltGen = 0;
-  let skipMarks = $state<SkipMarks | null>(null);
+  let skipMarksRaw = $state<SkipMarks | null>(null);
+  const skipMarks = $derived(clampSkipMarksToDuration(skipMarksRaw, player.duration) ?? skipMarksRaw);
   let skipMarksCarry = $state<SkipMarks | null>(null);
   let skipMarksCarryKey = '';
   let skipDismissedKind = $state<SkipMarkKind | null>(null);
@@ -2052,21 +2053,22 @@
 
   async function resolvePlaybackSource(
     rId: number, sId: number, ep: number, dubId: string | number | null,
-    episode: { url: string; iframe?: boolean; qualityMap?: Record<string, string>; currentQuality?: string }, isCurrent: () => boolean,
+    episode: { url: string; iframe?: boolean; qualityMap?: Record<string, string>; currentQuality?: string; skip?: unknown }, isCurrent: () => boolean,
   ) {
     const explicitWebPlayer = new URLSearchParams(location.search).get('webplayer') === '1';
     const url = episode.url;
     const resolved = explicitWebPlayer && episode.iframe && allowsIframeFallback(url)
       ? { playUrl: url.startsWith('//') ? `https:${url}` : url, useVideo: false, qualityMap: undefined, currentQuality: '', skip: undefined, error: undefined }
       : await core.resolve(url, !!episode.iframe);
+    const episodeSkip = normalizeSkipMarks(episode.skip);
     const corsSafeQualityMap = episode.qualityMap
       ? Object.fromEntries(
           Object.entries(episode.qualityMap).map(([q, qUrl]) => [q, toCorsSafePlayUrl(qUrl)]),
         )
       : undefined;
     const media = corsSafeQualityMap && resolved.useVideo
-      ? { ...resolved, qualityMap: corsSafeQualityMap, currentQuality: episode.currentQuality ?? '' }
-      : resolved;
+      ? { ...resolved, qualityMap: corsSafeQualityMap, currentQuality: episode.currentQuality ?? '', skip: resolved.skip ?? episodeSkip }
+      : { ...resolved, skip: resolved.skip ?? episodeSkip };
     const api = window.anixApi?.release;
     const dubber = positiveId(dubId);
     const original = { media, url, source: null };
@@ -2151,6 +2153,7 @@
       const { playUrl: pUrl, useVideo: uv, qualityMap, currentQuality: cq, skip, error: resolveError } = selection.media;
       if (myGen !== episodeLoadGen) return;
       setSkipMarks(skip, { carry: true });
+      maybeVerifySkipMarksWithKodik(rId, sId, srcName, ep, episode?.name, dubId, skip, !webPlayer && uv, () => myGen === episodeLoadGen);
       const resolved = applyQualityMap(qualityMap, cq, pUrl, { resetManualLock: true });
       applyVideoAndUI(resolved.url, uv, ep, titleStr, srcName, dubId, seekTime, initialPaused, resolveError);
       refreshSourceNameFromApi();
@@ -3266,9 +3269,37 @@
 
   function skipCarryKey() {
     if (localPlaybackPath) {
-      return `local:${watchState.releaseId}:${watchState.dubberName}:${watchState.sourceName}`;
+      return `local:${watchState.releaseId}:${watchState.dubberName}:${watchState.sourceName}:${watchState.ep}`;
     }
-    return `${watchState.releaseId}:${watchState.sourceId}`;
+    return `${watchState.releaseId}:${watchState.sourceId}:${watchState.ep}`;
+  }
+
+  function maybeVerifySkipMarksWithKodik(
+    rId: number,
+    sId: number,
+    srcName: string,
+    epPos: number,
+    epName: string | null | undefined,
+    dubId: string | number | null | undefined,
+    existingSkip: SkipMarks | null | undefined,
+    enabled: boolean,
+    isStillCurrent: () => boolean,
+  ) {
+    if (!enabled || /kodik|aniqit/i.test(srcName || '')) return;
+    void resolveVerifiedSkipMarks(existingSkip, {
+      releaseId: rId,
+      currentSourceId: sId,
+      dubberId: positiveId(dubId),
+      dubberName: watchState.dubberName,
+      episodePosition: epPos,
+      episodeName: epName,
+      episodes,
+    }).then((verified) => {
+      if (!verified || !isStillCurrent()) return;
+      if (!existingSkip || verified !== existingSkip) {
+        setSkipMarks(verified, { carry: false });
+      }
+    });
   }
 
   function setSkipMarks(raw: SkipMarks | null | undefined, opts?: { carry?: boolean }) {
@@ -3281,26 +3312,8 @@
     const next = opts?.carry ? mergeSkipMarks(incoming, skipMarksCarry) : incoming;
     skipMarksCarry = next;
     skipMarksCarryKey = key;
-    skipMarks = clampSkipMarksToDuration(next, player.duration) ?? next;
+    skipMarksRaw = next;
   }
-
-  $effect(() => {
-    const dur = player.duration;
-    const marks = skipMarks;
-    if (!marks || !(dur > 2)) return;
-    const clamped = clampSkipMarksToDuration(marks, dur);
-    if (!clamped) {
-      skipMarks = null;
-      return;
-    }
-    if (
-      clamped.opening?.start === marks.opening?.start &&
-      clamped.opening?.end === marks.opening?.end &&
-      clamped.ending?.start === marks.ending?.start &&
-      clamped.ending?.end === marks.ending?.end
-    ) return;
-    skipMarks = clamped;
-  });
 
   const skipPrompt = $derived.by((): SkipMarkKind | null => {
     if (!skipMarks || !player.useVideo || player.loadState !== 'ready' || player.switching) return null;
@@ -4203,6 +4216,17 @@
         const { playUrl: pUrl, useVideo: uv, qualityMap, currentQuality: cq, skip, error: resolveError } = selection.media;
         const resolved = applyQualityMap(qualityMap, cq, pUrl, { resetManualLock: true });
         setSkipMarks(skip, { carry: true });
+        maybeVerifySkipMarksWithKodik(
+          rId,
+          sId,
+          watchState.sourceName,
+          ep,
+          episode?.name,
+          dubId,
+          skip,
+          !new URLSearchParams(location.search).get('webplayer') && uv,
+          isCurrent,
+        );
         player.loadState = 'ready';
         await tick();
         if (!isCurrent()) return;

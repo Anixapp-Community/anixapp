@@ -17,6 +17,9 @@ const DEFAULT_ANIMELIB_VIDEO_BASE = 'https://video1.cdnlibs.org';
 const DEFAULT_ANIMELIB_VIDEO_PREFIX = '/.%D0%B0s';
 const ANIME_LIB_BATCH_SIZE = 6;
 const ANIME_LIB_EAGER_LIMIT = 24;
+const DREAMCAST_ORIGIN = 'https://dreamerscast.com';
+const DREAMCAST_INDEX = 7;
+const DREAMCAST_NAME = 'DreamCast';
 const CACHE_MS = 5 * 60_000;
 
 export function isCustomSourceId(value) {
@@ -41,6 +44,9 @@ const TEAM_ALIASES = {
   aniliberty: 'aniliberty',
   studioband: 'sameband',
   sameband: 'sameband',
+  dreamerscast: 'dreamcast',
+  jam: 'jamclub',
+  jamclub: 'jamclub',
 };
 
 function translationName(value) {
@@ -471,6 +477,244 @@ export function createCustomSources({
     });
   }
 
+  const DREAMCAST_ABC = 'ABCDEFGHIJKLMabcdefghijklmNOPQRSTUVWXYZnopqrstuvwxyz';
+  const DREAMCAST_SALT_ABC = DREAMCAST_ABC + '0123456789+/=';
+
+  function dreamcastSugar(x) {
+    let res = '';
+    for (const item of String(x).split('=')) {
+      const bin = [...item].map((c) => (c === 'x' ? '1' : '0')).join('');
+      res += String.fromCharCode(bin ? parseInt(bin, 2) : 0);
+    }
+    return Number(res.slice(0, -1));
+  }
+
+  function dreamcastPepper(s, n) {
+    let a = dreamcastSugar('xx???x=xx?x??=') * n;
+    if (n < 0) a += DREAMCAST_ABC.length / 2;
+    const shift = Math.trunc(a * 2);
+    const shifted = DREAMCAST_ABC.slice(shift) + DREAMCAST_ABC.slice(0, shift);
+    return String(s).replace(/[A-Za-z]/g, (c) => shifted[DREAMCAST_ABC.indexOf(c)]);
+  }
+
+  function dreamcastUd(e) {
+    let t = '';
+    let n = 0;
+    while (n < e.length) {
+      const r = e.charCodeAt(n);
+      if (r < 128) {
+        t += String.fromCharCode(r);
+        n += 1;
+      } else if (r > 191 && r < 224) {
+        const c2 = e.charCodeAt(n + 1);
+        t += String.fromCharCode(((r & 31) << 6) | (c2 & 63));
+        n += 2;
+      } else {
+        const c2 = e.charCodeAt(n + 1);
+        const c3 = e.charCodeAt(n + 2);
+        t += String.fromCharCode(((r & 15) << 12) | ((c2 & 63) << 6) | (c3 & 63));
+        n += 3;
+      }
+    }
+    return t;
+  }
+
+  function dreamcastSaltDecode(e) {
+    const clean = [...String(e)].filter((c) => DREAMCAST_SALT_ABC.includes(c)).join('');
+    let t = '';
+    let f = 0;
+    while (f < clean.length) {
+      const s = DREAMCAST_SALT_ABC.indexOf(clean[f++]);
+      const o = DREAMCAST_SALT_ABC.indexOf(clean[f++]);
+      const u = DREAMCAST_SALT_ABC.indexOf(clean[f++]);
+      const a = DREAMCAST_SALT_ABC.indexOf(clean[f++]);
+      t += String.fromCharCode((s << 2) | (o >> 4));
+      if (u !== 64) t += String.fromCharCode(((o & 15) << 4) | (u >> 2));
+      if (a !== 64) t += String.fromCharCode(((u & 3) << 6) | a);
+    }
+    return dreamcastUd(t);
+  }
+
+  function decodeDreamcastKeys(playerJsText) {
+    const idx = String(playerJsText ?? '').indexOf("return p}('");
+    if (idx < 0) return null;
+    const packed = playerJsText.slice(idx + 'return p}('.length, -1);
+    const pM = /'(.*[^\\])',/.exec(packed);
+    if (!pM) return null;
+    const rest1 = packed.slice(pM.index + pM[1].length + 2);
+    const aM = /(\d+),/.exec(rest1);
+    if (!aM) return null;
+    const rest2 = rest1.slice(aM.index + aM[1].length + 1);
+    const cM = /(\d+),/.exec(rest2);
+    if (!cM) return null;
+    const rest3 = rest2.slice(cM.index + cM[1].length + 1);
+    const kM = /'(.*)[^\\]'\.split/.exec(rest3);
+    if (!kM) return null;
+    const a = Number(aM[1]);
+    const c0 = Number(cM[1]);
+    const k = kM[1].split('|');
+    const b36 = '0123456789abcdefghijklmnopqrstuvwxyz';
+    const encBase = (n) => (n < a ? '' : encBase(Math.floor(n / a))) + ((n % a) > 35 ? String.fromCharCode((n % a) + 29) : b36[n % a]);
+    const dict = Object.create(null);
+    for (let i = c0 - 1; i >= 0; i -= 1) dict[encBase(i)] = k[i] || encBase(i);
+    const unpacked = pM[1].replace(/\b\w+\b/g, (w) => dict[w] ?? w);
+    const uM = /u:\s*\\\s*['"]([^=]+=[\\]+)\s*['"]/.exec(unpacked);
+    if (!uM) return null;
+    const raw = uM[1].replace(/\\+$/, '');
+    const decoded = raw.startsWith('#1')
+      ? dreamcastSaltDecode(dreamcastPepper(raw.slice(2), -1))
+      : raw.startsWith('#0')
+        ? dreamcastSaltDecode(raw.slice(2))
+        : raw;
+    const keys = [];
+    for (let i = 4; i >= 0; i -= 1) {
+      const val = new RegExp(`"bk${i}":"([^"]*)"`).exec(decoded)?.[1];
+      if (val && val !== 'undefined') keys.push(val);
+    }
+    return keys;
+  }
+
+  function decodeDreamcastPlaylist(encoded, keys) {
+    let str = String(encoded ?? '').slice(2);
+    for (const val of keys ?? []) {
+      const bytes = new TextEncoder().encode(encodeURIComponent(val));
+      let bin = '';
+      for (const b of bytes) bin += String.fromCharCode(b);
+      const marker = '//' + btoa(bin);
+      str = str.split(marker).join('');
+    }
+    const rawBin = atob(str);
+    const outBytes = new Uint8Array(rawBin.length);
+    for (let i = 0; i < rawBin.length; i += 1) outBytes[i] = rawBin.charCodeAt(i);
+    const playlist = JSON.parse(decodeURIComponent(new TextDecoder().decode(outBytes)));
+    if (typeof playlist?.file === 'string') {
+      return [{ title: 'Серия 1', file: playlist.file }];
+    }
+    return Array.isArray(playlist?.file) ? playlist.file : [];
+  }
+
+  function scoreDreamcastRelease(item, detail) {
+    const targetOrig = normalize(detail.titleOrig);
+    const targetRu = normalize(detail.titleRu);
+    const names = [item.russian, item.original].map(normalize).filter(Boolean);
+    let score = 0;
+    for (const name of names) {
+      if ((targetOrig && name === targetOrig) || (targetRu && name === targetRu)) {
+        score = Math.max(score, 100);
+      } else if (
+        (targetOrig.length >= 4 && (name.includes(targetOrig) || targetOrig.includes(name)))
+        || (targetRu.length >= 4 && (name.includes(targetRu) || targetRu.includes(name)))
+      ) {
+        score = Math.max(score, 60);
+      }
+    }
+    if (score === 0) return 0;
+    if (detail.year && Number(item.dateissue) === detail.year) score += 20;
+    return score;
+  }
+
+  const DREAMCAST_ORIGIN_TIMEOUT_MS = 3500;
+  const EXTERNAL_DUBBERS_BUDGET_MS = 6500;
+  const EXTERNAL_DUBBERS_EMPTY_BUDGET_MS = 6500;
+  const PROVIDER_COOLDOWN_MS = 60_000;
+  const providerCooldownUntil = new Map();
+
+  function isProviderCoolingDown(name) {
+    return (providerCooldownUntil.get(name) ?? 0) > Date.now();
+  }
+
+  function tripProviderCooldown(name, err) {
+    const msg = String(err?.name ?? err?.message ?? '');
+    if (/TimeoutError|AbortError|fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|HTTP 5\d\d/i.test(msg)) {
+      providerCooldownUntil.set(name, Date.now() + PROVIDER_COOLDOWN_MS);
+    }
+  }
+
+  function withCooldown(name, load, fallback) {
+    if (isProviderCoolingDown(name)) return Promise.resolve(fallback);
+    return Promise.resolve().then(load).catch((err) => {
+      tripProviderCooldown(name, err);
+      return fallback;
+    });
+  }
+
+  function dreamcastEpisodes(detail, releaseId) {
+    if (!detail) return Promise.resolve([]);
+    const cacheKey = `dreamcast:episodes:${releaseId}`;
+    return cached(cacheKey, async () => {
+      const queries = [
+        shortTitleQuery(detail.titleRu) || detail.titleRu,
+        shortTitleQuery(detail.titleOrig) || detail.titleOrig,
+      ].filter((q, idx, arr) => q && arr.indexOf(q) === idx);
+      let best = null;
+      let bestScore = 0;
+      for (const query of queries) {
+        const res = await fetcher(`${DREAMCAST_ORIGIN}/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+            Origin: DREAMCAST_ORIGIN,
+            Referer: `${DREAMCAST_ORIGIN}/`,
+            'User-Agent': BROWSER_UA,
+          },
+          body: new URLSearchParams({ search: query, status: '', pageSize: '16', pageNumber: '1' }),
+          redirect: 'error',
+          signal: AbortSignal.timeout(DREAMCAST_ORIGIN_TIMEOUT_MS),
+        });
+        if (!res.ok) continue;
+        const payload = await res.json();
+        for (const item of Array.isArray(payload?.releases) ? payload.releases : []) {
+          const score = scoreDreamcastRelease(item, detail);
+          if (score > bestScore) {
+            bestScore = score;
+            best = item;
+          }
+        }
+        if (bestScore >= 100) break;
+      }
+      if (!best?.url) return [];
+      const pageUrl = new URL(best.url, DREAMCAST_ORIGIN);
+      if (pageUrl.hostname !== 'dreamerscast.com') return [];
+      const pageRes = await fetcher(pageUrl.href, {
+        headers: { Referer: `${DREAMCAST_ORIGIN}/`, 'User-Agent': BROWSER_UA },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(DREAMCAST_ORIGIN_TIMEOUT_MS),
+      });
+      if (!pageRes.ok) return [];
+      const html = await pageRes.text();
+      const encoded = /new Playerjs\("(.*?)"\)/.exec(html)?.[1];
+      const jsPath = /<script[^>]+src="(\/js\/playerjs[^"]*)"/.exec(html)?.[1];
+      if (!encoded || !jsPath) return [];
+      const jsUrl = new URL(jsPath, DREAMCAST_ORIGIN);
+      if (jsUrl.hostname !== 'dreamerscast.com') return [];
+      const keys = await cached(`dreamcast:keys:${jsUrl.href}`, async () => {
+        const jsRes = await fetcher(jsUrl.href, {
+          headers: { Referer: pageUrl.href, 'User-Agent': BROWSER_UA },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(DREAMCAST_ORIGIN_TIMEOUT_MS),
+        });
+        if (!jsRes.ok) return null;
+        return decodeDreamcastKeys(await jsRes.text());
+      }, 30 * 60_000);
+      if (!keys) return [];
+      const items = decodeDreamcastPlaylist(encoded, keys);
+      return items.flatMap((row, index) => {
+        const parts = String(row?.file ?? '').split(/\s+/).filter((u) => /^https?:\/\//i.test(u));
+        const hls = parts.find((u) => /\.m3u8(?:$|[?#])/i.test(u));
+        const dash = parts.find((u) => /\.mpd(?:$|[?#])/i.test(u));
+        const rawUrl = hls ? studioMediaUrl(hls, 'dreamerscast.com')
+          : dash ? (() => { const u = studioMediaUrl(dash, 'dreamerscast.com'); return u ? u + '#dash.mpd' : null; })()
+          : null;
+        return rawUrl ? [{ position: episodePosition(row.title, index), url: rawUrl }] : [];
+      });
+    }).then((rows) => {
+      if (rows) return rows;
+      cache.set(cacheKey, { expires: Date.now() + 10_000, result: Promise.resolve([]) });
+      return [];
+    });
+  }
+
   function yummyVideos({ shikiId, title }) {
     return cached(`yummy:${shikiId}`, async () => {
       const search = await json(`https://api.yani.tv/search?limit=20&offset=0&q=${encodeURIComponent(title)}`);
@@ -498,18 +742,47 @@ export function createCustomSources({
     return Math.max(0, ...heights.filter(Number.isFinite));
   }
 
+  function getDubbersOfficial(release, releaseId) {
+    return cached(`types:${releaseId}`, () => release.getDubbers(releaseId));
+  }
+
   async function getDubbers(release, releaseId) {
-    const [official, detail, entry] = await Promise.all([
-      cached(`types:${releaseId}`, () => release.getDubbers(releaseId)),
-      releaseDetail(release, releaseId),
-      catalog(release, releaseId),
+    const officialPromise = getDubbersOfficial(release, releaseId);
+    const externalPromise = (async () => {
+      const detail = await releaseDetail(release, releaseId);
+      const [videosRes, libRes, vostRes, bandRes, dreamRes] = await Promise.allSettled([
+        withCooldown('yummy', async () => {
+          const entry = await catalog(release, releaseId);
+          return entry ? yummyVideos(entry) : [];
+        }, []),
+        withCooldown('animelib', () => animeLibEpisodes(detail, releaseId), { sampled: [], all: [], isPartial: false }),
+        withCooldown('animevost', () => studioEpisodes(detail, 'AnimeVost', detail?.shikiId), []),
+        withCooldown('sameband', () => studioEpisodes(detail, 'SameBand', detail?.shikiId), []),
+        withCooldown('dreamcast', () => dreamcastEpisodes(detail, releaseId), []),
+      ]);
+      return {
+        videos: videosRes.status === 'fulfilled' ? videosRes.value : [],
+        libData: libRes.status === 'fulfilled' ? libRes.value : { sampled: [], all: [], isPartial: false },
+        vost: vostRes.status === 'fulfilled' ? vostRes.value : [],
+        band: bandRes.status === 'fulfilled' ? bandRes.value : [],
+        dream: dreamRes.status === 'fulfilled' ? dreamRes.value : [],
+      };
+    })();
+
+    const official = await officialPromise;
+    const budgetMs = (official?.types?.length ?? 0) > 0
+      ? EXTERNAL_DUBBERS_BUDGET_MS
+      : EXTERNAL_DUBBERS_EMPTY_BUDGET_MS;
+    let timer;
+    const externalData = await Promise.race([
+      externalPromise,
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(null), budgetMs);
+      }),
     ]);
-    const [videos, libData, vost, band] = await Promise.all([
-      entry ? yummyVideos(entry) : [],
-      animeLibEpisodes(detail, releaseId),
-      studioEpisodes(detail, 'AnimeVost', entry?.shikiId),
-      studioEpisodes(detail, 'SameBand', entry?.shikiId),
-    ]);
+    clearTimeout(timer);
+    if (!externalData) return official;
+    const { videos, libData, vost, band, dream } = externalData;
     const types = official?.types ?? [];
     const known = new Set(types.map((item) => translationKey(item.name, item.is_sub === true || item.isSub === true)));
     const external = new Map();
@@ -522,6 +795,11 @@ export function createCustomSources({
       for (const row of rows ?? []) recordQuality(key, maxQuality(row.qualities));
       const positions = new Set((rows ?? []).filter((row) => Object.values(row.qualities).some(Boolean)).map((row) => row.position));
       if (!known.has(key) && positions.size) external.set(key, { name, positions });
+    }
+    if (dream?.length) {
+      const key = translationKey(DREAMCAST_NAME);
+      const positions = new Set(dream.map((row) => row.position));
+      if (!known.has(key) && positions.size) external.set(key, { name: DREAMCAST_NAME, positions });
     }
     for (const video of videos ?? []) {
       const name = translationName(video.data?.dubbing);
@@ -568,9 +846,10 @@ export function createCustomSources({
       const dub = translationKey(type?.name, type?.is_sub === true || type?.isSub === true);
       if (!dub || (!entry && !detail)) return [];
       const shikiId = entry?.shikiId;
-      const [videos, libData] = await Promise.all([
-        entry ? yummyVideos(entry) : [],
-        animeLibEpisodes(detail, releaseId),
+      const [videos, libData, dream] = await Promise.all([
+        entry ? withCooldown('yummy', () => yummyVideos(entry), []) : [],
+        withCooldown('animelib', () => animeLibEpisodes(detail, releaseId), { sampled: [], all: [], isPartial: false }),
+        dub === translationKey(DREAMCAST_NAME) ? withCooldown('dreamcast', () => dreamcastEpisodes(detail, releaseId), []) : [],
       ]);
       const groups = new Map();
       function add(index, name, number, url, iframe, extra = {}) {
@@ -585,18 +864,22 @@ export function createCustomSources({
       }
       const studio = [['AnimeVost', 'AnimeVost', 5], ['Studio Band', 'SameBand', 6]]
         .find(([name]) => translationKey(name) === dub);
+      const effectiveShikiId = shikiId || detail?.shikiId || 0;
       if (studio) {
         const [, name, index] = studio;
         for (const row of (await studioEpisodes(detail, name, shikiId)) ?? []) {
           const url = Object.values(row.qualities).find(Boolean);
-          add(index, name, row.position, url, false, { provider: 'studio', studio: name, qualities: row.qualities });
+          add(index, name, row.position, url, false, { provider: 'studio', studio: name, qualities: row.qualities, shikiId: effectiveShikiId });
         }
       }
       for (const video of videos ?? []) {
         if (translationKey(video.data?.dubbing) !== dub) continue;
         const provider = yummyProvider(video);
         if (!provider) continue;
-        add(provider.index, `${provider.name} (YummyAnime)`, video.number, provider.url, true);
+        add(provider.index, `${provider.name} (YummyAnime)`, video.number, provider.url, true, {
+          skips: video.skips,
+          shikiId: effectiveShikiId,
+        });
       }
       const dubFoundInSample = (libData.sampled ?? []).some((ep) =>
         ep.players.some((player) => animeLibTeamInfo(player).key === dub));
@@ -611,6 +894,8 @@ export function createCustomSources({
               epId: ep.epId,
               dub,
               qualities: matched.video?.quality ?? [],
+              timecodes: matched.timecode ?? [],
+              shikiId: effectiveShikiId,
             });
           } else if (libData.isPartial) {
             const epUrl = `${animeLibApiOrigin}/api/episodes/${ep.epId}`;
@@ -620,8 +905,18 @@ export function createCustomSources({
               dub,
               lazy: true,
               qualities: null,
+              timecodes: null,
+              shikiId: effectiveShikiId,
             });
           }
+        }
+      }
+      if (dub === translationKey(DREAMCAST_NAME)) {
+        for (const row of dream ?? []) {
+          add(DREAMCAST_INDEX, DREAMCAST_NAME, row.position, row.url, false, {
+            provider: 'dreamcast',
+            shikiId: effectiveShikiId,
+          });
         }
       }
       return [...groups.values()];
@@ -709,6 +1004,41 @@ export function createCustomSources({
     return adaptiveUrl ? { url: adaptiveUrl } : null;
   }
 
+  function toSkipRange(start, end) {
+    const a = Number(start);
+    const b = Number(end);
+    if (!Number.isFinite(a) || !Number.isFinite(b) || b - a < 2) return null;
+    return { start: a, end: b };
+  }
+
+  function normalizeSkipMarksObj(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const parseRange = (v) => {
+      if (v == null) return null;
+      if (Array.isArray(v) && v.length >= 2) return toSkipRange(v[0], v[1]);
+      if (typeof v === 'object') return toSkipRange(v.start ?? v.from ?? v.begin, v.stop ?? v.end ?? v.to ?? v.finish);
+      return null;
+    };
+    let opening = parseRange(raw.opening);
+    const ending = parseRange(raw.ending);
+    if (opening && opening.end - opening.start < 45 && opening.start < 90) opening = null;
+    if (!opening && !ending) return null;
+    return { opening, ending };
+  }
+
+  function skipFromAnimeLibTimecodes(timecodes) {
+    if (!Array.isArray(timecodes) || timecodes.length === 0) return null;
+    const op = timecodes.find((t) => /op|opening/i.test(String(t?.type ?? '')));
+    const ed = timecodes.find((t) => /ed|ending/i.test(String(t?.type ?? '')));
+    return normalizeSkipMarksObj({ opening: op, ending: ed });
+  }
+
+  function attachNativeSkip(resolved, nativeSkip = null) {
+    if (!resolved) return null;
+    const skip = normalizeSkipMarksObj(nativeSkip);
+    return skip ? { ...resolved, skip } : resolved;
+  }
+
   async function resolveEpisode(episode) {
     if (!episode) return null;
     if (episode.provider === 'studio') {
@@ -728,7 +1058,9 @@ export function createCustomSources({
         return stream ? [[height, stream]] : [];
       }));
       const currentQuality = Object.keys(qualityMap).at(-1);
-      return currentQuality ? { ...episode, url: qualityMap[currentQuality], qualityMap, currentQuality } : null;
+      return currentQuality
+        ? { ...episode, url: qualityMap[currentQuality], qualityMap, currentQuality }
+        : null;
     }
     if (episode.iframe) {
       try {
@@ -737,7 +1069,9 @@ export function createCustomSources({
         if (embed.hostname === cvhHost) {
           const resolved = await cached(`cvh-stream:${embed.href}`, () => resolveCvh(embed.href), 20_000);
           const playable = resolved?.qualityMap ? resolved.url : resolved?.url && prepareStream(resolved.url);
-          return playable ? { ...episode, ...resolved, url: playable, iframe: false } : null;
+          return playable
+            ? attachNativeSkip({ ...episode, ...resolved, url: playable, iframe: false }, episode.skips)
+            : null;
         }
         if (embed.hostname === 'alloha.yani.tv' && resolveAlloha) {
           url = await cached(`alloha:${embed.href}`, () => resolveAlloha(embed.href), 20_000);
@@ -754,10 +1088,12 @@ export function createCustomSources({
             if (stream) qualityMap[height] = stream;
           }
           const currentQuality = Object.keys(qualityMap).at(-1);
-          return currentQuality ? { ...episode, url: qualityMap[currentQuality], iframe: false, qualityMap, currentQuality } : null;
+          return currentQuality
+            ? attachNativeSkip({ ...episode, url: qualityMap[currentQuality], iframe: false, qualityMap, currentQuality }, episode.skips)
+            : null;
         }
         const playable = url && prepareStream(url);
-        return playable ? { ...episode, url: playable, iframe: false } : null;
+        return playable ? attachNativeSkip({ ...episode, url: playable, iframe: false }, episode.skips) : null;
       } catch {
         return null;
       }
@@ -765,6 +1101,7 @@ export function createCustomSources({
     if (episode.provider === 'animelib') {
       try {
         let rawQualities = Array.isArray(episode.qualities) ? episode.qualities : null;
+        let rawTimecodes = Array.isArray(episode.timecodes) ? episode.timecodes : null;
         if ((!rawQualities || rawQualities.length === 0) && episode.epId) {
           const full = await cached(`animelib:ep:${episode.epId}`, () =>
             animeLibJson(`/api/episodes/${episode.epId}`, {}, { useToken: true, anonymousFallback: true })
@@ -775,6 +1112,7 @@ export function createCustomSources({
             player.video.quality.length > 0 &&
             (!episode.dub || animeLibTeamInfo(player).key === episode.dub));
           rawQualities = matched?.video?.quality ?? [];
+          if (!rawTimecodes && Array.isArray(matched?.timecode)) rawTimecodes = matched.timecode;
         }
         const entries = await Promise.all((rawQualities ?? []).map(async (item) => {
           const height = Number(item?.quality);
@@ -788,7 +1126,7 @@ export function createCustomSources({
         const qualityMap = Object.fromEntries(entries.filter(Boolean));
         const currentQuality = Object.keys(qualityMap).at(-1);
         if (!currentQuality) return null;
-        return {
+        return attachNativeSkip({
           position: episode.position,
           name: episode.name,
           url: qualityMap[currentQuality],
@@ -796,15 +1134,20 @@ export function createCustomSources({
           availabilityVerified: Boolean(resolveAnimeLibStream),
           qualityMap,
           currentQuality,
-        };
+        }, skipFromAnimeLibTimecodes(rawTimecodes));
       } catch {
         return null;
       }
+    }
+    if (episode.provider === 'dreamcast') {
+      const stream = prepareStream(episode.url);
+      return stream ? { position: episode.position, name: episode.name, url: stream, iframe: false } : null;
     }
     return null;
   }
 
   return {
+    getDubbersOfficial,
     getDubbers,
     async getDubberSources(release, releaseId, dubberId) {
       const [official, custom] = await Promise.allSettled([

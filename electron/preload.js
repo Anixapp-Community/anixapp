@@ -570,6 +570,7 @@ contextBridge.exposeInMainWorld('anixApi', {
     randomProfileList: (profileId, status, extended = true) =>
       ipcRenderer.invoke('anix:randomProfileList', profileId, status, extended),
     related: (relatedId, page = 0) => ipcRenderer.invoke('anix:relatedReleases', relatedId, page),
+    getDubbersOfficial: (releaseId) => ipcRenderer.invoke('anix:getDubbersOfficial', releaseId),
     getDubbers: (releaseId) => ipcRenderer.invoke('anix:getDubbers', releaseId),
     getDubberSources: (releaseId, dubberId) => ipcRenderer.invoke('anix:getDubberSources', releaseId, dubberId),
     getEpisodes: (releaseId, dubberId, sourceId, sort = 1) => ipcRenderer.invoke('anix:getEpisodes', releaseId, dubberId, sourceId, sort),

@@ -309,6 +309,18 @@ export interface AnixApi {
     randomFavorite: (extended?: boolean) => Promise<{ release?: unknown }>;
     randomProfileList: (profileId: number, status: number, extended?: boolean) => Promise<{ release?: unknown }>;
     related: (relatedId: number, page?: number) => Promise<any>;
+    getDubbersOfficial?: (releaseId: number) => Promise<{
+      types?: Array<{
+        id: number;
+        name: string;
+        icon?: string;
+        episode_count?: number;
+        view_count?: number;
+        pinned?: boolean;
+        is_sub?: boolean;
+        quality?: number;
+      }>;
+    }>;
     getDubbers: (releaseId: number) => Promise<{
       types?: Array<{
         id: number;

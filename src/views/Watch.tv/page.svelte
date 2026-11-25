@@ -11,6 +11,7 @@
     clampSkipMarksToDuration,
     endingIsAtEpisodeEnd,
     normalizeSkipMarks,
+    resolveVerifiedSkipMarks,
     skipMarkActive,
     type SkipMarkKind,
     type SkipMarks,
@@ -83,7 +84,8 @@
   const SEEK_FLASH_MS = 900;
   let tickTimer = 0;
   let tickInterval = 0;
-  let skipMarks = $state<SkipMarks | null>(null);
+  let skipMarksRaw = $state<SkipMarks | null>(null);
+  const skipMarks = $derived(clampSkipMarksToDuration(skipMarksRaw, duration) ?? skipMarksRaw);
   let skipDismissedKind = $state<SkipMarkKind | null>(null);
   let timelineFocused = $state(false);
   /** Пошли первые кадры: до этого держим экран загрузки, а не чёрный плеер. */
@@ -457,18 +459,11 @@
         }
       }
     }
-    if (skipMarks && duration > 0) {
-      const clamped = clampSkipMarksToDuration(skipMarks, duration);
-      if (clamped !== skipMarks) skipMarks = clamped;
-    }
   }
 
   function applySkipMarks(raw: unknown) {
     skipDismissedKind = null;
-    skipMarks = normalizeSkipMarks(raw);
-    if (skipMarks && duration > 0) {
-      skipMarks = clampSkipMarksToDuration(skipMarks, duration);
-    }
+    skipMarksRaw = normalizeSkipMarks(raw);
   }
 
   function rememberSkipPref(kind: SkipMarkKind, pref: 'auto' | 'watch') {
@@ -731,7 +726,22 @@
       core.setOrigEpisodeUrl(episode.url);
       const resolved = await core.resolve(episode.url, episode.iframe);
       if (myGen !== episodeLoadGen) return;
-      applySkipMarks(resolved.skip);
+      const epSkip = normalizeSkipMarks(resolved.skip ?? (episode as { skip?: unknown }).skip);
+      applySkipMarks(epSkip);
+      if (resolved.useVideo && !/kodik|aniqit/i.test(sourceName || '')) {
+        void resolveVerifiedSkipMarks(epSkip, {
+          releaseId: rId,
+          currentSourceId: sId,
+          dubberId: positiveId(dubberId),
+          dubberName,
+          episodePosition: nextEp,
+          episodeName: episode?.name,
+          episodes,
+        }).then((verified) => {
+          if (!verified || myGen !== episodeLoadGen) return;
+          if (!epSkip || verified !== epSkip) applySkipMarks(verified);
+        });
+      }
       const epQualityMap = (episode as Episode & { qualityMap?: Record<string, string> }).qualityMap;
       const epCurrentQuality = (episode as Episode & { currentQuality?: string }).currentQuality;
       qualityMap = epQualityMap

@@ -153,6 +153,7 @@ function buildWebAnixApi(): AnixApi {
       randomProfileList: (profileId, status, extended = true) =>
         invoke('anix:randomProfileList', profileId, status, extended),
       related: (relatedId, page = 0) => invoke('anix:relatedReleases', relatedId, page),
+      getDubbersOfficial: (releaseId) => invoke('anix:getDubbersOfficial', releaseId),
       getDubbers: (releaseId) => invoke('anix:getDubbers', releaseId),
       getDubberSources: (releaseId, dubberId) => invoke('anix:getDubberSources', releaseId, dubberId),
       getEpisodes: (releaseId, dubberId, sourceId, sort = 1) =>

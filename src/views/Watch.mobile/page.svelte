@@ -19,6 +19,7 @@
     clampSkipMarksToDuration,
     endingIsAtEpisodeEnd,
     normalizeSkipMarks,
+    resolveVerifiedSkipMarks,
     skipMarkActive,
     type SkipMarkKind,
     type SkipMarks,
@@ -125,7 +126,8 @@
   let controlsVisible = $state(true);
   let locked = $state(false);
   let sheet = $state<Sheet>(null);
-  let skipMarks = $state<SkipMarks | null>(null);
+  let skipMarksRaw = $state<SkipMarks | null>(null);
+  const skipMarks = $derived(clampSkipMarksToDuration(skipMarksRaw, duration) ?? skipMarksRaw);
   let skipDismissedKind = $state<SkipMarkKind | null>(null);
 
   // жесты
@@ -515,10 +517,6 @@
           break;
         }
       }
-      if (skipMarks) {
-        const clamped = clampSkipMarksToDuration(skipMarks, duration);
-        if (clamped !== skipMarks) skipMarks = clamped;
-      }
     }
   }
 
@@ -716,7 +714,24 @@
       const resolved = await core.resolve(episode.url, episode.iframe);
       if (myGen !== episodeLoadGen) return;
       skipDismissedKind = null;
-      skipMarks = normalizeSkipMarks(resolved.skip);
+      const epSkip = normalizeSkipMarks(resolved.skip ?? (episode as { skip?: unknown }).skip);
+      skipMarksRaw = epSkip;
+      if (resolved.useVideo && !/kodik|aniqit/i.test(sourceName || '')) {
+        void resolveVerifiedSkipMarks(epSkip, {
+          releaseId: rId,
+          currentSourceId: sId,
+          dubberId: positiveId(dubberId),
+          dubberName,
+          episodePosition: nextEpPos,
+          episodeName: episode?.name,
+          episodes,
+        }).then((verified) => {
+          if (!verified || myGen !== episodeLoadGen) return;
+          if (!epSkip || verified !== epSkip) {
+            skipMarksRaw = verified;
+          }
+        });
+      }
       qualityMap = episode.qualityMap
         ? Object.fromEntries(
             Object.entries(episode.qualityMap).map(([q, qUrl]) => [q, toCorsSafePlayUrl(qUrl)]),

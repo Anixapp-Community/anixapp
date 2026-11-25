@@ -33,6 +33,7 @@ let destroyed = false;
 let paused = false;
 let reconnectTimer = null;
 let mainWindowRef = null;
+let _lastConnectError = null;
 
 // ── Context-aware activity slots ──────────────────────────────────────────────
 // We keep separate last-known activities for the main window and the player
@@ -99,6 +100,7 @@ async function connect() {
 
     rpc.on('ready', () => {
       connected = true;
+      _lastConnectError = null;
       console.log('[Discord RPC] Connected as', rpc.user?.username);
 
       // Subscribe to activity events for party invites
@@ -145,7 +147,11 @@ async function connect() {
 
     await rpc.login();
   } catch (err) {
-    console.warn('[Discord RPC] Failed to connect:', err.message ?? String(err));
+    const msg = err.message ?? String(err);
+    if (msg !== _lastConnectError) {
+      _lastConnectError = msg;
+      console.warn('[Discord RPC] Failed to connect:', msg);
+    }
     rpc = null;
     connected = false;
     if (!destroyed) scheduleReconnect();

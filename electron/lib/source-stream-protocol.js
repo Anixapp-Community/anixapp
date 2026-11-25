@@ -18,6 +18,7 @@ function getSourceOrigin(host) {
   if (host === 'tut-video.net' || host.endsWith('.tut-video.net')) return 'https://player.aksor.tv';
   if (host.endsWith('.userplay.live')) return 'https://alloha.yani.tv';
   if ((host === 'okcdn.ru' || host.endsWith('.okcdn.ru'))) return 'https://player.cdnvideohub.com';
+  if (host === 'dreamerscast.com' || host.endsWith('.dreamerscast.com')) return 'https://dreamerscast.com';
   if (isAnimeLibMediaHost(host)) return 'https://animelib.org';
   return null;
 }
@@ -50,7 +51,7 @@ function fetchSourceStream(raw, options = {}) {
     : {
         Origin: origin,
         Referer: origin + '/',
-        ...(origin === 'https://player.cdnvideohub.com' ? { 'User-Agent': BROWSER_UA } : {}),
+        ...((origin === 'https://player.cdnvideohub.com' || origin === 'https://dreamerscast.com') ? { 'User-Agent': BROWSER_UA } : {}),
       };
   return fetch(url, {
     ...options,

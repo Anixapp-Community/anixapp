@@ -699,6 +699,11 @@ export function createBrowserAnixBridge() {
       if (id == null || cat == null) return { videos: [] };
       return c.getClient().endpoints.release.getVideoInCategory({ id, categoryId: cat, page });
     }),
+    'anix:getDubbersOfficial': h((c, releaseId) => {
+      const id = toPositiveInt(releaseId);
+      if (id == null) return { types: [] };
+      return customSources.getDubbersOfficial(c.getClient().endpoints.release, id);
+    }),
     'anix:getDubbers': h((c, releaseId) => {
       const id = toPositiveInt(releaseId);
       if (id == null) return { types: [] };
