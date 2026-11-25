@@ -15,7 +15,6 @@
   interface Props {
     ep: number;
     title: string;
-    currentEpisodeQuality?: number;
     dubberName: string;
     sourceName: string;
     episodes: EpisodeItem[];
@@ -45,7 +44,7 @@
   }
 
   let {
-    ep, title, currentEpisodeQuality, dubberName, sourceName,
+    ep, title, dubberName, sourceName,
     episodes, dubbers, sources,
     downloadedEpisodes, downloadedPositions, localMode, currentDownloadedPath,
     currentDubberId, currentSourceId, popoverType, popoverLoading, lastEpisodeTypeUpdateId,
@@ -256,7 +255,6 @@
   anchor={seriesAnchor}
   {episodes}
   {title}
-  {currentEpisodeQuality}
   {downloadedPositions}
   {localMode}
   currentEp={ep}

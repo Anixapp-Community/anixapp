@@ -4,7 +4,6 @@
   import { iconCircleCheck, iconDownload } from '../../../components/icons';
   import { episodeDisplayLabel } from '../../../utils/episode-display';
   import { isFillerEpisode } from '../../../utils/episode-filler';
-  import { formatQualityHeight, qualityHeight } from '../../../utils/dubber-meta';
 
   interface Props {
     open: boolean;
@@ -13,7 +12,6 @@
     anchor?: HTMLElement | null;
     episodes: EpisodeItem[];
     title: string;
-    currentEpisodeQuality?: number;
     currentEp: number;
     loading: boolean;
     downloadedPositions?: number[];
@@ -24,7 +22,7 @@
 
   let {
     open, x, y, anchor = null,
-    episodes, title, currentEp, currentEpisodeQuality = 0, loading,
+    episodes, title, currentEp, loading,
     downloadedPositions = [],
     localMode = false,
     onselect, onclose,
@@ -74,10 +72,6 @@
       id: `ep:${ep.position}`,
       label: episodeDisplayLabel(ep, baseEpisodes),
       badgeText: isFillerEpisode(title, ep) ? 'Филлер' : undefined,
-      valueText: formatQualityHeight(Math.max(
-        qualityHeight(ep.max_quality), qualityHeight(ep.quality),
-        ep.position === currentEp ? currentEpisodeQuality : 0,
-      )) ?? undefined,
       type: 'radio' as const,
       checked: ep.position === currentEp,
       icon: episodeIcon(ep),
