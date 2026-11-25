@@ -17,14 +17,16 @@
   const DISCORD_INVITE = 'https://discord.gg/qdFMFxzU9A';
 
   interface Props {
+    allowWeb?: boolean;
     onChoose: (kind: MobilePlayerKind, remember: boolean, playerId?: ExternalPlayerId) => void;
     onClose: () => void;
   }
-  let { onChoose, onClose }: Props = $props();
+  let { onChoose, onClose, allowWeb = true }: Props = $props();
 
   const initial = getMobilePlayerPrefs();
+  // svelte-ignore state_referenced_locally
   let kind = $state<MobilePlayerKind>(
-    initial.kind === 'web' || initial.kind === 'external' ? initial.kind : 'builtin',
+    (initial.kind === 'web' && allowWeb) || initial.kind === 'external' ? initial.kind : 'builtin',
   );
   let remember = $state(initial.ask === false);
   let step = $state<'main' | 'external' | 'suggest'>('main');
@@ -136,7 +138,7 @@
 {#if step === 'main'}
   <UiV2ChoiceSheet
     title="Выберите плеер"
-    options={MAIN_OPTIONS}
+    options={allowWeb ? MAIN_OPTIONS : MAIN_OPTIONS.filter((option) => option.value !== 'web')}
     value={kind}
     cancelLabel="Отмена"
     disabled={loadingPlayers && kind === 'external'}

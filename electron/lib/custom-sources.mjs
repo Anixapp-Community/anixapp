@@ -24,6 +24,12 @@ export function isCustomSourceId(value) {
   return Number.isSafeInteger(id) && id >= SOURCE_BASE + SOURCE_STRIDE;
 }
 
+export function supportsSourceWebPlayer(value) {
+  if (!isCustomSourceId(value)) return true;
+  const index = (Number(value) - SOURCE_BASE) % SOURCE_STRIDE;
+  return index === 0 || index === 1;
+}
+
 function normalize(value) {
   return String(value ?? '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 }
@@ -481,7 +487,6 @@ export function createCustomSources({
       normalize(String(video.data?.player ?? '').replace(/^плеер\s+/i, '')));
     if (index < 0) return null;
     const [name, host] = providers[index];
-    if (host === 'alloha.yani.tv' && !resolveAlloha) return null;
     const url = secureUrl(video.iframe_url, host);
     return url ? { index, name, url } : null;
   }
@@ -590,7 +595,8 @@ export function createCustomSources({
       for (const video of videos ?? []) {
         if (translationKey(video.data?.dubbing) !== dub) continue;
         const provider = yummyProvider(video);
-        if (provider) add(provider.index, `${provider.name} (YummyAnime)`, video.number, provider.url, true);
+        if (!provider) continue;
+        add(provider.index, `${provider.name} (YummyAnime)`, video.number, provider.url, true);
       }
       const dubFoundInSample = (libData.sampled ?? []).some((ep) =>
         ep.players.some((player) => animeLibTeamInfo(player).key === dub));
@@ -632,13 +638,20 @@ export function createCustomSources({
     const params = new URL(url).searchParams;
     const id = params.get('anime_id');
     const position = params.get('episode');
-    const dub = params.get('dubbing_code')?.replace(/\+/g, ' ');
+    const dub = params.get('dubbing_code')?.replace(/\+/g, ' ').trim();
+    const season = params.get('season');
     if (!id || !position || !dub) return null;
     const api = 'https://plapi.cdnvideohub.com/api/v1/player/sv';
     const cvhHeaders = { 'User-Agent': BROWSER_UA };
     const playlist = await cached(`cvh:${id}`, () =>
       json(`${api}/playlist?pub=1&aggr=mali&id=${encodeURIComponent(id)}`, cvhHeaders));
-    const item = playlist?.items?.find((entry) => String(entry.episode) === position && entry.voiceStudio === dub);
+    const matchingEpisode = (Array.isArray(playlist?.items) ? playlist.items : []).filter((entry) =>
+      Number(entry.episode) === Number(position) &&
+      (!season || entry.season == null || Number(entry.season) === Number(season)));
+    const exact = matchingEpisode.find((entry) => entry.voiceStudio === dub && entry.vkId);
+    const dubKey = translationKey(dub);
+    const aliases = matchingEpisode.filter((entry) => entry.vkId && translationKey(entry.voiceStudio) === dubKey);
+    const item = exact ?? (dubKey && aliases.length === 1 ? aliases[0] : null);
     if (!item?.vkId) return null;
     const video = await json(`${api}/video/${encodeURIComponent(item.vkId)}`, cvhHeaders);
     let adaptiveUrl;
@@ -829,10 +842,19 @@ export function createCustomSources({
       };
     },
 
-    async getEpisode(release, releaseId, sourceId, position) {
+    async getEpisode(release, releaseId, sourceId, position, preferEmbed = false) {
       if (sourceId < SOURCE_BASE) return release.getEpisode(releaseId, sourceId, position);
       const source = await getSource(release, releaseId, sourceId);
-      return { code: 0, episode: await resolveEpisode(source?.episodes.get(Number(position))) ?? null };
+      const episode = source?.episodes.get(Number(position));
+      if (preferEmbed) {
+        return {
+          code: 0,
+          episode: supportsSourceWebPlayer(sourceId) && episode?.iframe && episode.url
+            ? { position: episode.position, name: episode.name, url: episode.url, iframe: true }
+            : null,
+        };
+      }
+      return { code: 0, episode: await resolveEpisode(episode) ?? null };
     },
   };
 }

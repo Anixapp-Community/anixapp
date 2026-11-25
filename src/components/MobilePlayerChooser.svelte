@@ -3,13 +3,15 @@
   import { getMobilePlayerPrefs, type MobilePlayerKind } from '../utils/mobile-player';
 
   interface Props {
+    allowWeb?: boolean;
     onChoose: (kind: MobilePlayerKind, ask: boolean) => void;
     onClose: () => void;
   }
-  let { onChoose, onClose }: Props = $props();
+  let { onChoose, onClose, allowWeb = true }: Props = $props();
 
   const initial = getMobilePlayerPrefs();
-  let kind = $state<MobilePlayerKind>(initial.kind);
+  // svelte-ignore state_referenced_locally
+  let kind = $state<MobilePlayerKind>(initial.kind === 'web' && !allowWeb ? 'builtin' : initial.kind);
   let ask = $state(initial.ask);
 
   const OPTIONS: { id: MobilePlayerKind; title: string; text: string; warning?: string }[] = [
@@ -29,7 +31,7 @@
   <div class="m-dialog" role="dialog" aria-modal="true" aria-label="Выберите плеер">
     <h2 class="m-dialog__title">Выберите плеер</h2>
     <div class="m-dialog__options" role="radiogroup">
-      {#each OPTIONS as o (o.id)}
+      {#each OPTIONS.filter((option) => allowWeb || option.id !== 'web') as o (o.id)}
         <button
           type="button"
           role="radio"

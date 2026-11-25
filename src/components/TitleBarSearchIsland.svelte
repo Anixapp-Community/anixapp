@@ -16,12 +16,17 @@
     iconArrowRight,
   } from './icons';
   import {
+    addSearchHistory,
     getSearchHistory,
     removeSearchHistory,
     clearSearchHistory,
   } from '../utils/search-history';
   import {
     openSearchPage,
+    isSearchTab,
+    LIVE_SEARCH_DELAY,
+    LIVE_SEARCH_HISTORY_DELAY,
+    updateLiveSearch,
     RELEASE_SEARCH_BY_OPTIONS,
     type SearchTab,
   } from '../search-controller';
@@ -34,6 +39,8 @@
   const HISTORY_LIMIT = 8;
 
   let query = $state('');
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  let historyTimer: ReturnType<typeof setTimeout> | undefined;
   let focused = $state(false);
   let open = $state(false);
   let activeIndex = $state(-1);
@@ -107,6 +114,8 @@
   }
 
   function submit(tab: SearchTab = 'releases', by = 0, value = trimmed) {
+    clearTimeout(searchTimer);
+    clearTimeout(historyTimer);
     const q = value.trim();
     query = q;
     openSearchPage(q, tab, by);
@@ -142,9 +151,31 @@
     closeDrop();
   }
 
-  function onInput() {
+  function scheduleSearch(event?: InputEvent) {
+    clearTimeout(searchTimer);
+    clearTimeout(historyTimer);
+    if (event?.isComposing) return;
+    searchTimer = setTimeout(() => {
+      if (getPath() !== '/search') return;
+      const params = getSearchParams();
+      const scope = params.get('tab');
+      updateLiveSearch(query, isSearchTab(scope) ? scope : 'releases', Number(params.get('by')) || 0);
+      closeDrop();
+    }, LIVE_SEARCH_DELAY);
+    historyTimer = setTimeout(() => {
+      const params = getSearchParams();
+      if (!trimmed || getPath() !== '/search' || params.get('q') !== trimmed) return;
+      const scope = params.get('tab');
+      const tab = isSearchTab(scope) ? scope : 'releases';
+      addSearchHistory(trimmed, tab);
+      recent = getSearchHistory();
+    }, LIVE_SEARCH_HISTORY_DELAY);
+  }
+
+  function onInput(event: InputEvent) {
     activeIndex = -1;
     if (!open) openDrop();
+    scheduleSearch(event);
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -166,7 +197,7 @@
       });
       return;
     }
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.isComposing) {
       e.preventDefault();
       const opt = activeIndex >= 0 ? options[activeIndex] : null;
       if (opt) choose(opt);
@@ -176,6 +207,7 @@
 
   function clearQuery() {
     query = '';
+    scheduleSearch();
     activeIndex = -1;
     inputEl?.focus();
   }
@@ -212,7 +244,11 @@
       const detail = (e as CustomEvent<unknown>).detail;
       syncFromRoute(typeof detail === 'string' ? detail : undefined);
     };
-    const onPop = () => syncFromRoute();
+    const onPop = () => {
+      clearTimeout(searchTimer);
+      clearTimeout(historyTimer);
+      syncFromRoute();
+    };
     const onResize = () => {
       if (open) positionDrop();
     };
@@ -222,6 +258,8 @@
     window.addEventListener('hashchange', onPop);
     window.addEventListener('resize', onResize);
     return () => {
+      clearTimeout(searchTimer);
+      clearTimeout(historyTimer);
       window.removeEventListener('anix:openSearchIsland', onOpen as EventListener);
       window.removeEventListener('anix:navigate', onNavigate);
       window.removeEventListener('popstate', onPop);
@@ -257,6 +295,7 @@
       onfocus={onFocus}
       onblur={onBlur}
       oninput={onInput}
+      oncompositionend={() => scheduleSearch()}
       onkeydown={onKeydown}
     />
     {#if trimmed}

@@ -157,8 +157,8 @@ function buildWebAnixApi(): AnixApi {
       getDubberSources: (releaseId, dubberId) => invoke('anix:getDubberSources', releaseId, dubberId),
       getEpisodes: (releaseId, dubberId, sourceId, sort = 1) =>
         invoke('anix:getEpisodes', releaseId, dubberId, sourceId, sort),
-      getEpisode: (releaseId, sourceId, episodePosition) =>
-        invoke('anix:getEpisode', releaseId, sourceId, episodePosition),
+      getEpisode: (releaseId, sourceId, episodePosition, preferEmbed) =>
+        invoke('anix:getEpisode', releaseId, sourceId, episodePosition, preferEmbed),
       getEpisodeUpdates: (releaseId, page = 0) => invoke('anix:getEpisodeUpdates', releaseId, page),
       getDirectVideoLink: (embedUrl) => invoke('anix:getDirectVideoLink', embedUrl),
       getVideos: (releaseId) => invoke('anix:getVideos', releaseId),

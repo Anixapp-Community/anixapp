@@ -4,8 +4,9 @@ import { isMobileMode } from '../platform/mobile';
  * встроенный плеер (/watch на hls.js) и сторонний (системный выбор). Настройка хранится локально.
  */
 import { launchPlayer, playerWindowOpener, type WatchLaunchParams } from './watch-nav';
+import { openExternalInBrowser } from './external-link';
 import { externalPlayerUsesPlaylist } from './player-integration';
-import { isCustomSourceId } from '../../electron/lib/custom-sources.mjs';
+import { isCustomSourceId, supportsSourceWebPlayer } from '../../electron/lib/custom-sources.mjs';
 
 export type MobilePlayerKind = 'web' | 'builtin' | 'external';
 
@@ -421,7 +422,8 @@ export async function launchWithKind(
   params: WatchLaunchParams,
   opts: ExternalLaunchOpts = {},
 ): Promise<MobileLaunchResult> {
-  if (kind === 'builtin' || isCustomSourceId(params.sourceId)) {
+  if (kind === 'web' && !supportsSourceWebPlayer(params.sourceId)) kind = 'builtin';
+  if (kind === 'builtin' || (kind === 'external' && isCustomSourceId(params.sourceId))) {
     await launchPlayer(params);
     return { started: true };
   }
@@ -440,6 +442,17 @@ export async function launchWithKind(
         sourceWeb: true,
       });
       return { started: true };
+    }
+    if (isCustomSourceId(params.sourceId)) {
+      const response = await window.anixApi?.release.getEpisode(Number(params.releaseId), Number(params.sourceId), Number(params.ep), true);
+      const episode = response?.episode;
+      if (episode?.url) {
+        const url = new URL(episode.url);
+        if (url.protocol === 'https:' && url.hostname === 'player.aksor.tv') {
+          await openExternalInBrowser(url.href);
+          return { started: true };
+        }
+      }
     }
     await launchPlayer({ ...params, webPlayer: true });
     return { started: true };

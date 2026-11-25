@@ -15,7 +15,7 @@ export const sourceAvailabilityLabels: Record<SourceAvailability, string> = {
   manifest: 'Манифест доступен',
 };
 
-type Episode = { url: string; iframe?: boolean; availabilityVerified?: boolean };
+type Episode = { url: string; iframe?: boolean; availabilityVerified?: boolean; requireMediaBytes?: boolean };
 type ProbeDetails = { maxHeight: number };
 const checks = new Map<string, { expires: number; task: Promise<SourceAvailability>; details: ProbeDetails }>();
 const retryAt = new Map<string, number>();
@@ -80,7 +80,7 @@ async function probeEpisode(episode: Episode, details: ProbeDetails): Promise<So
   let url = absolute(episode.url);
   const proxy = /^(https?:\/\/[^/]+)?\/tv\/media\?/i.test(url);
   const good: SourceAvailability = proxy ? 'proxy' : 'available';
-  if (episode.availabilityVerified) return good;
+  if (episode.availabilityVerified && !episode.requireMediaBytes) return good;
   let referer: string | undefined;
   const libriaPage = /^https?:\/\/[^/]*(?:libria|liberty)\.[^/]+\//i.test(url) && !/\.mp4(?:[?#]|$)/i.test(url);
   if ((episode.iframe || libriaPage) && !isHlsUrl(url) && !isDashUrl(url)) {
@@ -91,7 +91,7 @@ async function probeEpisode(episode: Episode, details: ProbeDetails): Promise<So
     url = toResolvedMediaUrl(result.directUrl);
   }
   const request = async (target: string, manifest: boolean): Promise<{
-    status: number; url: string; text?: string; type?: string | null; timeout?: boolean;
+    status: number; url: string; text?: string; type?: string | null; timeout?: boolean; hasBytes?: boolean;
   }> => {
     const host = new URL(unwrapMediaProxyUrl(target), location.href).host;
     if ((retryAt.get(host) ?? 0) > Date.now()) return { status: 429, url: target };
@@ -115,8 +115,16 @@ async function probeEpisode(episode: Episode, details: ProbeDetails): Promise<So
     });
     trackLimit(response.status, response.headers.get('Retry-After'));
     const text = manifest && response.ok ? await response.text() : undefined;
-    if (text === undefined) void response.body?.cancel().catch(() => {});
-    return { status: response.status, type: response.headers.get('Content-Type'), text, url: response.url, timeout: false };
+    let hasBytes: boolean | undefined;
+    if (!manifest && response.ok && episode.requireMediaBytes && response.body) {
+      const reader = response.body.getReader();
+      try {
+        hasBytes = Boolean((await reader.read()).value?.byteLength);
+      } finally {
+        void reader.cancel().catch(() => {});
+      }
+    } else if (text === undefined) void response.body?.cancel().catch(() => {});
+    return { status: response.status, type: response.headers.get('Content-Type'), text, hasBytes, url: response.url, timeout: false };
   };
   const failure = (response: { status: number; timeout?: boolean }): SourceAvailability =>
     response.status === 429 ? 'rateLimited' : response.timeout ? 'timeout' : response.status === 0 ? 'network' : 'unavailable';
@@ -163,6 +171,7 @@ async function probeEpisode(episode: Episode, details: ProbeDetails): Promise<So
     response = await request(url, false);
   }
   if (response.status < 200 || response.status >= 300) return failure(response);
+  if (episode.requireMediaBytes && !response.hasBytes) return 'unavailable';
   const type = response.type ?? '';
   return /^(video\/|audio\/|application\/octet-stream)/i.test(type)
     || (mediaVerified && response.status === 206) ? good : 'unknown';
@@ -170,7 +179,7 @@ async function probeEpisode(episode: Episode, details: ProbeDetails): Promise<So
 
 export function checkEpisodeAvailability(episode: Episode, refresh = false, onQuality?: (height: number) => void): Promise<SourceAvailability> {
   if (!episode.url) return Promise.resolve('unavailable');
-  const key = `${episode.iframe ? 'embed' : 'direct'}:${episode.url}`;
+  const key = `${episode.iframe ? 'embed' : 'direct'}:${episode.requireMediaBytes ? 'bytes' : 'headers'}:${episode.url}`;
   const previous = checks.get(key);
   const report = (entry: { task: Promise<SourceAvailability>; details: ProbeDetails }) => onQuality
     ? entry.task.then((status) => {

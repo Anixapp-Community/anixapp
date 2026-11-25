@@ -1927,7 +1927,8 @@
       window.history.replaceState(null, '', `${window.location.pathname}?${qs}`);
     }
 
-    if (!useVid && (isCustomSourceId(watchState.sourceId) || !allowsIframeFallback(core.origEpUrl || pUrl))) {
+    const explicitWebPlayer = new URLSearchParams(location.search).get('webplayer') === '1';
+    if (!useVid && ((!explicitWebPlayer && isCustomSourceId(watchState.sourceId)) || !allowsIframeFallback(core.origEpUrl || pUrl))) {
       showPlayerError(core.origEpUrl || pUrl, userPlaybackError(core.origEpUrl || pUrl, resolveError));
       return;
     }
@@ -2055,7 +2056,9 @@
   ) {
     const explicitWebPlayer = new URLSearchParams(location.search).get('webplayer') === '1';
     const url = episode.url;
-    const resolved = await core.resolve(url, !!episode.iframe);
+    const resolved = explicitWebPlayer && episode.iframe && allowsIframeFallback(url)
+      ? { playUrl: url.startsWith('//') ? `https:${url}` : url, useVideo: false, qualityMap: undefined, currentQuality: '', skip: undefined, error: undefined }
+      : await core.resolve(url, !!episode.iframe);
     const corsSafeQualityMap = episode.qualityMap
       ? Object.fromEntries(
           Object.entries(episode.qualityMap).map(([q, qUrl]) => [q, toCorsSafePlayUrl(qUrl)]),
@@ -2109,15 +2112,17 @@
       void loadReleasePoster(String(rId));
     }
     void fetchEpisodesSilently();
-    const prefetched = prefetchedEpisodes.get(`${rId}:${sId}:${ep}`);
+    const webPlayer = new URLSearchParams(location.search).get('webplayer') === '1';
+    const customWebPlayer = webPlayer && isCustomSourceId(sId);
+    const prefetched = webPlayer ? undefined : prefetchedEpisodes.get(`${rId}:${sId}:${ep}`);
     const episodeRequest = prefetched && prefetched.expires > Date.now()
       ? Promise.resolve(prefetched.response)
-      : api.getEpisode(rId, sId, ep);
+      : api.getEpisode(rId, sId, ep, webPlayer);
     return episodeRequest.then(async (res: any) => {
       if (myGen !== episodeLoadGen) return;
       let episode = res?.episode;
       // Films often use position 0; if target endpoint is empty, fall back to episodes list.
-      if (!episode?.url && api.getEpisodes) {
+      if (!episode?.url && !customWebPlayer && api.getEpisodes) {
         try {
           const dubNum = positiveId(dubId) ?? positiveId(watchState.dubberId);
           if (dubNum != null) {
@@ -2130,7 +2135,9 @@
         } catch { /* ignore */ }
       }
       if (!episode?.url) {
-        showPlayerError('', 'Нет ссылки на видео');
+        showPlayerError('', customWebPlayer
+          ? 'У этой серии нет доступной ссылки на оригинальный веб-плеер. Попробуйте встроенный плеер.'
+          : 'Нет ссылки на видео');
         return;
       }
       const selection = await resolvePlaybackSource(rId, sId, ep, dubId, episode, () => myGen === episodeLoadGen);
@@ -4366,9 +4373,10 @@
           return;
         }
         if (!p?.releaseId || !p.sourceId || episodeIndex(p.ep) == null) return;
-        if (p.webPlayer === true) {
+        if (p.webPlayer === true || p.local) {
           const current = new URLSearchParams(window.location.search);
-          current.set('webplayer', '1');
+          if (p.webPlayer === true) current.set('webplayer', '1');
+          else current.delete('webplayer');
           window.history.replaceState(null, '', `${window.location.pathname}?${current.toString()}`);
         }
         lobbyIdleMode = false;

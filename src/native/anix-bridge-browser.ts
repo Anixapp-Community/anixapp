@@ -720,11 +720,11 @@ export function createBrowserAnixBridge() {
       if (id == null || dub == null || source == null) return { episodes: [] };
       return customSources.getEpisodes(c.getClient().endpoints.release, id, dub, source, sort);
     }),
-    'anix:getEpisode': h((c, releaseId, sourceId, episodePosition) => {
+    'anix:getEpisode': h((c, releaseId, sourceId, episodePosition, preferEmbed) => {
       const id = toPositiveInt(releaseId);
       const source = toPositiveInt(sourceId);
       if (id == null || source == null) return { episode: null };
-      return customSources.getEpisode(c.getClient().endpoints.release, id, source, episodePosition);
+      return customSources.getEpisode(c.getClient().endpoints.release, id, source, episodePosition, preferEmbed === true);
     }),
     'anix:getEpisodeUpdates': h((c, releaseId, page = 0) =>
       c.getClient().endpoints.release.episodeUpdates?.(toPositiveInt(releaseId), page)),

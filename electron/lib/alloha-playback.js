@@ -56,6 +56,7 @@ function resolveAllohaStream(embedUrl) {
     let fallbackManifest = null;
     let settleTimer;
     let bestHeightCount = 0;
+    let bestHeight = 0;
     const finish = (manifest = null) => {
       if (!pending.delete(id)) return;
       clearTimeout(timer);
@@ -70,10 +71,10 @@ function resolveAllohaStream(embedUrl) {
       seen.add(manifest);
       if (!fallbackManifest) {
         fallbackManifest = manifest;
-        settleTimer = setTimeout(() => finish(fallbackManifest), 1400);
+        settleTimer = setTimeout(() => finish(fallbackManifest), 2900);
       }
       try {
-        const response = await fetchSourceStream(manifest, { signal: AbortSignal.timeout(1200) });
+        const response = await fetchSourceStream(manifest, { signal: AbortSignal.timeout(2200) });
         if (!response.ok) {
           await response.body?.cancel();
           return;
@@ -81,7 +82,9 @@ function resolveAllohaStream(embedUrl) {
         const playlist = await response.text();
         if (!playlist.trimStart().startsWith('#EXTM3U')) return;
         const heights = new Set([...playlist.matchAll(/RESOLUTION=\d+x(\d+)/gi)].map((match) => match[1]));
-        if (heights.size > bestHeightCount) {
+        const maxHeight = Math.max(0, ...Array.from(heights, Number));
+        if (maxHeight > bestHeight || (maxHeight === bestHeight && heights.size > bestHeightCount)) {
+          bestHeight = maxHeight;
           bestHeightCount = heights.size;
           fallbackManifest = manifest;
         }

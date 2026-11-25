@@ -723,6 +723,8 @@ async function prepareSourceWebSession() {
 
 /** episode/target через ту же session. Только api-s — не backup (чужой ip=). */
 async function resolveSourceEmbedInSession(ses, releaseId, sourceId, ep) {
+  const { isCustomSourceId } = await import('../lib/custom-sources.mjs');
+  if (isCustomSourceId(sourceId)) return '';
   const config = require('../lib/config-store');
   const { DEFAULT_BASE_URL, ANIXART_UA } = require('../lib/constants');
   const { token } = config.loadConfig();
@@ -760,6 +762,7 @@ async function nodeDirectEmbedHint(releaseId, sourceId, ep) {
       Number(releaseId),
       Number(sourceId),
       Number(ep),
+      true,
     );
     return normalizeSourceEmbedUrl(data?.episode?.url || '');
   } catch (_) {
@@ -790,6 +793,7 @@ function loadAnixartWebPlayer(win, playerUrl, appReferer) {
 
 function isSourceEmbedPlayerWindow(win) {
   if (!win || win.isDestroyed()) return false;
+  if (state.currentPlayerPlayback?.sourceEmbedUrl || win._anixSourceWeb) return true;
   try {
     const u = win.webContents.getURL() || '';
     if (!u || u === 'about:blank') return !!state.currentPlayerPlayback?.sourceEmbedUrl;
@@ -815,6 +819,7 @@ function attachPlayerWindowLifecycle(playerWindow, { isSourceWeb, sourceEmbedUrl
     sourceId: String(params.sourceId ?? ''),
     ep: String(params.ep ?? ''),
     dubberId: String(params.dubberId ?? ''),
+    webPlayer: params.webPlayer === true,
     ...(params.externalUrl ? { externalUrl: String(params.externalUrl) } : {}),
     ...(isSourceWeb && sourceEmbedUrl ? { sourceEmbedUrl } : {}),
   };
@@ -843,6 +848,42 @@ function attachPlayerWindowLifecycle(playerWindow, { isSourceWeb, sourceEmbedUrl
   }
 }
 
+function standaloneSourceReferer(raw) {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return '';
+    if (url.hostname === 'player.aksor.tv') return 'https://yani.tv/';
+  } catch { /* no standalone source */ }
+  return '';
+}
+
+async function openStandaloneSourceWindow(params, url, referer, ses) {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 720,
+    title: String(params.title || 'AnixApp'),
+    autoHideMenuBar: true,
+    webPreferences: {
+      session: ses,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  attachPlayerWindowLifecycle(win, { isSourceWeb: true, sourceEmbedUrl: url, params });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event, target) => {
+    try {
+      if (new URL(target).origin !== new URL(url).origin) event.preventDefault();
+    } catch { event.preventDefault(); }
+  });
+  try {
+    await loadAnixartWebPlayer(win, url, referer);
+  } catch {
+    if (!win.isDestroyed()) await win.loadURL(sourceWebLoadingHtml('Не удалось открыть веб-плеер источника.')).catch(() => {});
+  }
+}
+
 async function createSourceWebPlayerWindow(params) {
   registerSourceWebIpc();
   const iconPath = getIconPath();
@@ -854,10 +895,19 @@ async function createSourceWebPlayerWindow(params) {
   const nodeUrlP = hintUrl
     ? Promise.resolve(hintUrl)
     : nodeDirectEmbedHint(params.releaseId, params.sourceId, params.ep);
+  const prepared = await sessionP;
+  const { isCustomSourceId } = await import('../lib/custom-sources.mjs');
+  if (isCustomSourceId(params.sourceId)) {
+    const url = await nodeUrlP;
+    const referer = standaloneSourceReferer(url);
+    if (referer) {
+      await openStandaloneSourceWindow(params, url, referer, prepared.ses);
+      return;
+    }
+  }
+
   const iframeCfgP = resolveAnixartIframeEmbedPrefix(null);
   const episodesP = listSourceWebEpisodes(params.releaseId, params.dubberId, params.sourceId);
-
-  const prepared = await sessionP;
 
   const playerWindow = new BrowserWindow({
     width: 1280,
@@ -915,7 +965,7 @@ async function createSourceWebPlayerWindow(params) {
 
   if (!embed) {
     await playerWindow.loadURL(sourceWebLoadingHtml(
-      'Не удалось получить ссылку на плеер источника.',
+      'У этой серии нет доступной ссылки на оригинальный веб-плеер. Попробуйте встроенный плеер.',
     )).catch(() => {});
     return;
   }
@@ -1050,6 +1100,7 @@ async function createPlayerWindow(params) {
     ...(params.paused != null ? { paused: params.paused ? '1' : '0' } : {}),
     ...(params.applyRoomPlayback ? { applyRoomPlayback: '1' } : {}),
     ...(params.resume ? { resume: '1' } : {}),
+    ...(params.webPlayer ? { webplayer: '1' } : {}),
   };
   const hasLocalFile = typeof params.localFile === 'string' && params.localFile.trim() !== '';
   const hasExternalUrl = typeof params.externalUrl === 'string' && params.externalUrl.trim() !== '';
@@ -1108,7 +1159,7 @@ function isSamePlaybackContent(a, b) {
   if (!a || !b) return false;
   if (a.sourceEmbedUrl || b.sourceEmbedUrl) return a.sourceEmbedUrl === b.sourceEmbedUrl;
   if (a.externalUrl || b.externalUrl) return a.externalUrl === b.externalUrl;
-  return a.releaseId === b.releaseId && a.sourceId === b.sourceId && a.ep === b.ep && (a.dubberId || '') === (b.dubberId || '');
+  return a.releaseId === b.releaseId && a.sourceId === b.sourceId && a.ep === b.ep && (a.dubberId || '') === (b.dubberId || '') && !!a.webPlayer === !!b.webPlayer;
 }
 
 /** Онлайн-стрим → пауза загрузок; локальный файл → можно качать. */
@@ -1143,10 +1194,10 @@ function focusPlayerWindow() {
 async function openPlayerWithParams(params) {
   if (!params || typeof params !== 'object') return;
   const applyRoomPlayback = !!params.applyRoomPlayback;
-  const { isCustomSourceId } = await import('../lib/custom-sources.mjs');
-  const builtinOnly = isCustomSourceId(params.sourceId);
-  const sourceEmbedUrl = builtinOnly ? '' : normalizeSourceEmbedUrl(params.sourceEmbedUrl);
-  const wantsSourceWeb = !builtinOnly && (params.sourceWeb === true || params.webPlayer === true || !!sourceEmbedUrl);
+  const { supportsSourceWebPlayer } = await import('../lib/custom-sources.mjs');
+  const allowWeb = supportsSourceWebPlayer(params.sourceId);
+  const sourceEmbedUrl = allowWeb ? normalizeSourceEmbedUrl(params.sourceEmbedUrl) : '';
+  const wantsSourceWeb = allowWeb && (params.sourceWeb === true || params.webPlayer === true || !!sourceEmbedUrl);
   const safe = {
     releaseId: String(params.releaseId ?? ''),
     sourceId: String(params.sourceId ?? ''),
@@ -1212,6 +1263,7 @@ async function openPlayerWithParams(params) {
         sourceId: safe.sourceId,
         ep: safe.ep,
         dubberId: safe.dubberId || '',
+        webPlayer: safe.webPlayer === true,
       };
       if (!applyRoomPlayback && isSamePlaybackContent(state.currentPlayerPlayback, incomingContent)) {
         focusPlayerWindow();

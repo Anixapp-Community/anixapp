@@ -741,12 +741,12 @@ function createAnixBridgeCore(options = {}) {
       if (id == null || dubId == null || srcId == null) return { episodes: [] };
       return (await getCustomSources()).getEpisodes(c.getClient().endpoints.release, id, dubId, srcId, sort);
     }),
-    'anix:getEpisode': h(async (c, releaseId, sourceId, episodePosition) => {
+    'anix:getEpisode': h(async (c, releaseId, sourceId, episodePosition, preferEmbed) => {
       const id = toPositiveInt(releaseId);
       const srcId = toPositiveInt(sourceId);
       const ep = toNonNegativeInt(episodePosition);
       if (id == null || srcId == null || ep == null) return { episode: null };
-      return (await getCustomSources()).getEpisode(c.getClient().endpoints.release, id, srcId, ep);
+      return (await getCustomSources()).getEpisode(c.getClient().endpoints.release, id, srcId, ep, preferEmbed === true);
     }),
     'anix:getEpisodeUpdates': h((c, releaseId, page = 0) => {
       const id = toPositiveInt(releaseId);

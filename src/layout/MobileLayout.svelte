@@ -4,7 +4,7 @@
    * (телефон — нижняя панель-шторка, планшет — боковая панель), полноэкранные «Профиль» и «Настройки».
    * Содержимое — те же вью, что и в desktop, но под мобильными токенами.
    */
-  import { onMount } from 'svelte';
+  import { flushSync, onMount } from 'svelte';
   import { slide } from 'svelte/transition';
   import { get } from 'svelte/store';
   import type { Snippet } from 'svelte';
@@ -247,8 +247,10 @@
       return;
     }
     const route = searchScope === 'releases' ? '/search' : buildSearchRoute('', searchScope);
-    closeProfile();
-    navigate(route);
+    flushSync(() => {
+      closeProfile();
+      navigate(route);
+    });
   }
 
   function openNotifications() {

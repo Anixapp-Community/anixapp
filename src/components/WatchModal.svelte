@@ -63,7 +63,7 @@
   import { isFillerEpisode } from '../utils/episode-filler';
   import { formatQualityHeight, qualityHeight, isDubberNovelty, readLastEpisodeTypeUpdateId, sortDubbersPinnedFirst } from '../utils/dubber-meta';
   import { listPlayableDubberSources, NO_EPISODE_PICK_OTHER_DUB, sourcePlayerLabel } from '../utils/dubber-sources';
-  import { isCustomSourceId } from '../../electron/lib/custom-sources.mjs';
+  import { isCustomSourceId, supportsSourceWebPlayer } from '../../electron/lib/custom-sources.mjs';
   import { checkEpisodeAvailability, sourceAvailabilityLabels, type SourceAvailability } from '../views/Watch/source-availability';
   import { isTvMode } from '../platform/tv';
   import { releaseMedia, watchReleaseMedia } from '../services/release-media';
@@ -812,7 +812,11 @@
                 recordQuality(Math.max(qualityHeight(result.episode.currentQuality),
                   ...Object.keys(result.episode.qualityMap ?? {}).map(qualityHeight)));
               }
-              sample = await checkEpisodeAvailability(result?.episode ?? candidate, refresh, recordQuality);
+              const checkedEpisode = result?.episode ?? candidate;
+              const isAlloha = source.name.trim().toLowerCase().startsWith('alloha');
+              sample = await checkEpisodeAvailability(isAlloha
+                ? { ...checkedEpisode, requireMediaBytes: true }
+                : checkedEpisode, refresh, recordQuality);
             } catch { /* try the second sample */ }
             if (sample === 'available' || sample === 'proxy') {
               status = sample;
@@ -1373,7 +1377,7 @@
                   <span class="watch-modal__source-meta">
                     {#if count != null}<span class="watch-modal__variant-ep">{count} эп. ·</span>{/if}
                     <span class="watch-modal__source-status" data-status={status}>{sourceAvailabilityLabels[status]}</span>
-                    {#if qualityLabel}<span class="watch-modal__quality-badge">{qualityLabel}</span>{/if}
+                    {#if qualityLabel}<span class="watch-modal__quality-badge">{warned ? '≥' : ''}{qualityLabel}</span>{/if}
                   </span>
                 </span>
                 {#if sourceReady(status)}
@@ -1804,11 +1808,12 @@
     {/if}
 
     {#if chooserEp !== null || chooserSettings}
-      <MobilePlayerChooser onChoose={onChooserDone} onClose={() => { chooserEp = null; chooserSettings = false; }} />
+      <MobilePlayerChooser allowWeb={chooserEp === null || supportsSourceWebPlayer(selectedSource?.id)} onChoose={onChooserDone} onClose={() => { chooserEp = null; chooserSettings = false; }} />
     {/if}
 
     {#if !isMobile && (desktopChooserEp !== null || desktopChooserSettings)}
       <DesktopPlayerChooser
+        allowWeb={desktopChooserEp === null || supportsSourceWebPlayer(selectedSource?.id)}
         onChoose={onDesktopChooserDone}
         onClose={() => { desktopChooserEp = null; desktopChooserSettings = false; }}
       />

@@ -19,7 +19,9 @@ export function createCustomSources(options?: {
   getDubbers(release: ReleaseEndpoints, releaseId: number): Promise<unknown>;
   getDubberSources(release: ReleaseEndpoints, releaseId: number, dubberId: number): Promise<unknown>;
   getEpisodes(release: ReleaseEndpoints, releaseId: number, dubberId: number, sourceId: number, sort?: number): Promise<unknown>;
-  getEpisode(release: ReleaseEndpoints, releaseId: number, sourceId: number, position: number): Promise<unknown>;
+  getEpisode(release: ReleaseEndpoints, releaseId: number, sourceId: number, position: number, preferEmbed?: boolean): Promise<unknown>;
 };
 
 export function isCustomSourceId(value: unknown): boolean;
+
+export function supportsSourceWebPlayer(value: unknown): boolean;

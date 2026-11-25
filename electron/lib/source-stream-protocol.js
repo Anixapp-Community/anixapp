@@ -17,7 +17,7 @@ function getSourceOrigin(host) {
   if (host === 'video.animetop.info' || host === 'animevost.org' || host.endsWith('.animevost.org')) return 'https://animevost.org';
   if (host === 'tut-video.net' || host.endsWith('.tut-video.net')) return 'https://player.aksor.tv';
   if (host.endsWith('.userplay.live')) return 'https://alloha.yani.tv';
-  if (host.endsWith('.okcdn.ru')) return 'https://player.cdnvideohub.com';
+  if ((host === 'okcdn.ru' || host.endsWith('.okcdn.ru'))) return 'https://player.cdnvideohub.com';
   if (isAnimeLibMediaHost(host)) return 'https://animelib.org';
   return null;
 }
@@ -50,7 +50,7 @@ function fetchSourceStream(raw, options = {}) {
     : {
         Origin: origin,
         Referer: origin + '/',
-        ...(url.hostname.endsWith('.okcdn.ru') ? { 'User-Agent': BROWSER_UA } : {}),
+        ...(origin === 'https://player.cdnvideohub.com' ? { 'User-Agent': BROWSER_UA } : {}),
       };
   return fetch(url, {
     ...options,
@@ -81,11 +81,19 @@ async function probeSourceStream(raw, manifest) {
   });
   const type = response.headers.get('Content-Type') ?? '';
   const result = { status: response.status, type, retryAfter: response.headers.get('Retry-After') };
-  if (!manifest || !response.ok || !response.body) {
+  if (!response.ok || !response.body) {
     void response.body?.cancel().catch(() => {});
     return result;
   }
   const reader = response.body.getReader();
+  if (!manifest) {
+    try {
+      const { value } = await reader.read();
+      return { ...result, hasBytes: Boolean(value?.byteLength) };
+    } finally {
+      void reader.cancel().catch(() => {});
+    }
+  }
   const decoder = new TextDecoder();
   let text = '';
   let size = 0;

@@ -21,7 +21,6 @@
   import { iconX } from '../components/icons';
   import { handleUserProfileClick } from '../stores/user-profile';
   import { resolveBadgeName, resolveProfileBadgeUrl } from '../utils/badge';
-  import { addSearchHistory } from '../utils/search-history';
   import { mapReleaseRawToCard } from '../utils/release-card';
   import { mapCollectionCard } from '../utils/collection';
   import { headlineFromLoadError } from '../utils/content-load-error';
@@ -254,7 +253,6 @@
         profiles = [...profiles, ...next];
       }
 
-      if (first) addSearchHistory(query, activeTab);
       page += 1;
       hasMore = content.length > 0;
       const searchingMore = filtering && activeTab === 'releases' && !releases.length && hasMore;
@@ -623,6 +621,9 @@
 
 <style>
   .search-filter-spacing { margin-block-end: 1.25rem; }
-  :global(html.mobile-mode) .search-filter-spacing { padding-inline: var(--m-gutter); }
+  :global(html.mobile-mode) .search-filter-spacing {
+    margin-block: 0.7rem 0.9rem;
+    padding-inline: var(--m-gutter);
+  }
   .view-search-v2 :global(.search-v2__franchise + .release-cards-grid-root) { margin-block-start: 0.85rem; }
 </style>

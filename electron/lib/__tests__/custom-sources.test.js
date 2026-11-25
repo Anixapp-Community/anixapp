@@ -176,6 +176,8 @@ describe('AnimeLib custom source integration', () => {
     assert.equal(epList.episodes[0].position, 1);
 
     // 4. Episode playback resolution (single slash after prefix)
+    const webEpisode = await custom.getEpisode(releaseEndpoints, 19000, animeLibSource.id, 1, true);
+    assert.equal(webEpisode.episode, null);
     const epDetail = await custom.getEpisode(releaseEndpoints, 19000, animeLibSource.id, 1);
     assert.equal(epDetail.episode.currentQuality, '1080');
     assert.equal(
@@ -219,7 +221,7 @@ describe('AnimeLib custom source integration', () => {
       }
       if (url.hostname === 'plapi.cdnvideohub.com' && url.pathname.endsWith('/playlist')) {
         seenUa.push(ua);
-        return jsonResponse({ items: [{ episode: '1', voiceStudio: 'AniLiberty', vkId: '999' }] });
+        return jsonResponse({ items: [{ episode: '01', voiceStudio: ' AniLiberty ', vkId: '999' }] });
       }
       if (url.hostname === 'plapi.cdnvideohub.com' && url.pathname.endsWith('/video/999')) {
         seenUa.push(ua);
@@ -256,6 +258,9 @@ describe('AnimeLib custom source integration', () => {
     const sourcesRes = await custom.getDubberSources(releaseEndpoints, 1, 10);
     const cvh = sourcesRes.sources.find((s) => s.name === 'CVH (YummyAnime)');
     assert.ok(cvh);
+    const web = await custom.getEpisode(releaseEndpoints, 1, cvh.id, 1, true);
+    assert.equal(web.episode, null);
+    assert.equal(seenUa.length, 0);
     const ep = await custom.getEpisode(releaseEndpoints, 1, cvh.id, 1);
     assert.equal(ep.episode.url, 'https://vd1.okcdn.ru/video.m3u8?id=1');
     assert.ok(seenUa.every((ua) => ua.includes('Chrome/122.0.0.0')));

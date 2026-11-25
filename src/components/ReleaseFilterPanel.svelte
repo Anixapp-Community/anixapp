@@ -948,8 +948,31 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  :global(html.mobile-mode) .release-filter__grid > :nth-last-child(2):nth-child(odd) {
-    grid-column: 1 / -1;
+  @container (max-width: 33.99rem) {
+    :global(html.mobile-mode) .release-filter__grid > :nth-last-child(2):nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @container (min-width: 34rem) {
+    :global(html.mobile-mode) .release-filter__grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @container (min-width: 40rem) {
+    :global(html.mobile-mode) .release-filter__grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    :global(html.mobile-mode) .release-filter__year-tile {
+      grid-column: span 3;
+    }
+  }
+
+  :global(html.mobile-mode) .release-filter--grid :global(.uiv2-menu-sheet__bar) {
+    flex-wrap: wrap;
+    margin-bottom: 0.45rem;
   }
 
   .release-filter__grid :global(.uiv2-select--row .uiv2-select__trigger) {

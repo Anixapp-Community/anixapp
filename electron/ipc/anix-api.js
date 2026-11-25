@@ -171,14 +171,14 @@ ipcMain.handle('anix:getEpisodes', async (_, releaseId, dubberId, sourceId, sort
   }
 });
 
-ipcMain.handle('anix:getEpisode', async (_, releaseId, sourceId, episodePosition) => {
+ipcMain.handle('anix:getEpisode', async (_, releaseId, sourceId, episodePosition, preferEmbed) => {
   const id = toPositiveInt(releaseId);
   const srcId = toPositiveInt(sourceId);
   const ep = toNonNegativeInt(episodePosition);
   if (id == null || srcId == null || ep == null) return { episode: null };
   try {
     const client = getAnixart();
-    return await (await getCustomSources()).getEpisode(client.endpoints.release, id, srcId, ep);
+    return await (await getCustomSources()).getEpisode(client.endpoints.release, id, srcId, ep, preferEmbed === true);
   } catch (err) {
     handleAnixError(err, 'getEpisode');
   }

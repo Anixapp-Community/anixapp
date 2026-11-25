@@ -1,4 +1,4 @@
-import { isCurrentAppRoute, navigate } from './stores/navigation';
+import { isCurrentAppRoute, navigate, replacePath } from './stores/navigation';
 import { addSearchHistory } from './utils/search-history';
 import { RELEASE_SEARCH_BY } from './views/Release/_metaInfo';
 
@@ -45,6 +45,15 @@ export function buildSearchRoute(
 }
 
 /** Открыть страницу результатов. */
+export const LIVE_SEARCH_DELAY = 350;
+export const LIVE_SEARCH_HISTORY_DELAY = 1800;
+
+export function updateLiveSearch(query: string, tab: SearchTab = 'releases', searchBy = 0): void {
+  const q = query.trim();
+  const route = q ? buildSearchRoute(q, tab, searchBy) : '/search';
+  if (!isCurrentAppRoute(route)) replacePath(route);
+}
+
 export function openSearchPage(query: string, tab: SearchTab = 'releases', searchBy = 0): void {
   const q = query.trim();
   if (q) addSearchHistory(q, tab);

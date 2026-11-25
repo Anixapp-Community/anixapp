@@ -1,7 +1,9 @@
 <script lang="ts">
   // Мобильная строка поиска и история запросов. Фильтры находятся на странице поиска.
+  import { onDestroy } from 'svelte';
   import { iconClock, iconX } from '../components/icons';
-  import { buildSearchRoute, openSearchPage, SEARCH_PLACEHOLDERS, type SearchTab } from '../search-controller';
+  import { buildSearchRoute, LIVE_SEARCH_DELAY, LIVE_SEARCH_HISTORY_DELAY, openSearchPage, SEARCH_PLACEHOLDERS, updateLiveSearch, type SearchTab } from '../search-controller';
+  import { pushBackHandler } from '../platform/mobile-back';
   import { navigate } from '../stores/navigation';
   import { addSearchHistory, clearSearchHistory, getSearchHistory, type SearchHistoryScope } from '../utils/search-history';
 
@@ -19,11 +21,14 @@
   const placeholder = $derived(local?.label ?? SEARCH_PLACEHOLDERS[tab]);
 
   let query = $derived(value);
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  let historyTimer: ReturnType<typeof setTimeout> | undefined;
   let focused = $state(false);
+  let historyOpen = $state(false);
   let recent = $state<string[]>([]);
   let inputEl = $state<HTMLInputElement | null>(null);
 
-  const showHistory = $derived(local ? !value || focused : focused && query.trim() !== value.trim() && history.length > 0);
+  const showHistory = $derived(historyOpen || (local ? !value || focused : focused && !!query.trim() && query.trim() !== value.trim() && history.length > 0));
   const history = $derived.by(() => {
     const needle = query.trim().toLocaleLowerCase('ru-RU');
     return recent.filter((item) => item.toLocaleLowerCase('ru-RU').includes(needle));
@@ -34,18 +39,61 @@
   });
 
   $effect(() => {
-    if (local && !value) inputEl?.focus();
+    const input = inputEl;
+    if (input && !input.value) input.focus();
   });
+
+  $effect(() => {
+    if (!historyOpen) return;
+    return pushBackHandler(() => {
+      historyOpen = false;
+      return true;
+    });
+  });
+
+  function toggleHistory() {
+    historyOpen = !historyOpen;
+    if (historyOpen) {
+      recent = getSearchHistory(historyScope);
+      inputEl?.blur();
+    }
+  }
 
   function onFocus() {
     recent = getSearchHistory(historyScope);
     focused = true;
   }
 
+  function onBlur() {
+    focused = false;
+  }
+
+  function scheduleSearch(event?: InputEvent) {
+    historyOpen = false;
+    cancelScheduledSearch();
+    if (local || event?.isComposing) return;
+    searchTimer = setTimeout(() => updateLiveSearch(query, tab, searchBy), LIVE_SEARCH_DELAY);
+    historyTimer = setTimeout(() => {
+      const q = query.trim();
+      if (!q || q !== value) return;
+      addSearchHistory(q, historyScope);
+      recent = getSearchHistory(historyScope);
+    }, LIVE_SEARCH_HISTORY_DELAY);
+  }
+
+  function cancelScheduledSearch() {
+    clearTimeout(searchTimer);
+    clearTimeout(historyTimer);
+  }
+
+  onDestroy(cancelScheduledSearch);
+
   function submit(text: string) {
+    cancelScheduledSearch();
     const q = text.trim();
     if (!q && local) return;
     query = q;
+    historyOpen = false;
     inputEl?.blur();
     if (!q) {
       openSearchPage(q);
@@ -62,6 +110,7 @@
 
   function clearInput() {
     query = '';
+    scheduleSearch();
     if (local && value) local.onQuery('');
     inputEl?.focus();
   }
@@ -83,7 +132,9 @@
     {placeholder}
     aria-label={placeholder}
     onfocus={onFocus}
-    onblur={() => { focused = false; }}
+    oninput={scheduleSearch}
+    oncompositionend={() => scheduleSearch()}
+    onblur={onBlur}
   />
   {#if query}
     <!-- preventDefault: поле не теряет фокус, клавиатура не прячется -->
@@ -91,17 +142,30 @@
       {@html iconX(24)}
     </button>
   {/if}
+  {#if !local}
+    <button
+      type="button"
+      class="m-icon-btn m-searchbar__history"
+      class:m-searchbar__history--open={historyOpen}
+      aria-label="История поиска"
+      aria-expanded={showHistory}
+      onclick={toggleHistory}
+    >
+      {@html iconClock(24)}
+    </button>
+  {/if}
 </form>
 
 {#if showHistory}
+  {@const entries = historyOpen ? recent : history}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="m-search-history" onmousedown={(e) => e.preventDefault()}>
-    {#if history.length > 0}
+    {#if entries.length > 0}
       <div class="m-search-history__head">
         <span>История поиска</span>
         <button type="button" onclick={clearAll}>Очистить все</button>
       </div>
-      {#each history as item (item)}
+      {#each entries as item (item)}
         <button type="button" class="m-search-history__row" onclick={() => submit(item)}>
           {@html iconClock(24)}
           <span>{item}</span>
@@ -114,6 +178,8 @@
 {/if}
 
 <style lang="scss">
+  .m-searchbar__history--open { color: var(--m-on-secondary-container); background: var(--m-secondary-container); }
+
   .m-searchbar {
     flex: 1;
     min-width: 0;
