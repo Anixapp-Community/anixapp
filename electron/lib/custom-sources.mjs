@@ -6,7 +6,6 @@ const providers = [
   ['Alloha', 'alloha.yani.tv'],
   ['CVH', cvhHost],
 ];
-const aniTypeHost = 'res.anitypeapis.ru';
 const animeLibApiOrigin = 'https://api.cdnlibs.org';
 const animeLibFallbackOrigin = 'https://api.imglib.info';
 const ANIME_LIB_INDEX = 4;
@@ -34,6 +33,8 @@ const TEAM_ALIASES = {
   anilibriatv: 'aniliberty',
   anilibertyanilibria: 'aniliberty',
   aniliberty: 'aniliberty',
+  studioband: 'sameband',
+  sameband: 'sameband',
 };
 
 function translationName(value) {
@@ -66,8 +67,30 @@ function secureUrl(value, hostname) {
   }
 }
 
+function studioMediaUrl(value, domain) {
+  const url = secureUrl(value);
+  if (!url) return null;
+  const host = new URL(url).hostname;
+  return host === domain || host.endsWith('.' + domain) ? url : null;
+}
+
+function sameBandTitleKey(value) {
+  const words = String(value ?? '').toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  return words.sort().join(' ');
+}
+
+function animeVostMediaUrl(value) {
+  const url = String(value ?? '').replace(/^http:\/\/video\.animetop\.info\//i, 'https://video.animetop.info/');
+  return secureUrl(url, 'video.animetop.info') ?? studioMediaUrl(url, 'animevost.org');
+}
+
+function episodePosition(name, index) {
+  const match = /(?:^|\s)(\d+)\s*(?:серия|episode|$)/i.exec(String(name ?? '').trim());
+  return match ? Number(match[1]) : index + 1;
+}
+
 export function createCustomSources({
-  fetcher = globalThis.fetch, fetchMedia = fetcher, aniTypeToken = '',
+  fetcher = globalThis.fetch, fetchMedia = fetcher,
   aniLibToken = '', animeLibVideoBaseUrl = DEFAULT_ANIMELIB_VIDEO_BASE,
   animeLibVideoPathPrefix = DEFAULT_ANIMELIB_VIDEO_PREFIX,
   resolveAlloha, resolveAnimeLibStream, prepareStream = (url) => url,
@@ -97,6 +120,91 @@ export function createCustomSources({
     return response.json();
   }
 
+  async function studioRequest(url, form) {
+    const response = await fetcher(url, {
+      ...(form && { method: 'POST', body: new URLSearchParams(form) }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(4500),
+    });
+    if (!response.ok) throw new Error('Studio source unavailable');
+    return response;
+  }
+
+  function studioEpisodes(detail, studio, catalogId) {
+    if (!detail) return [];
+    const shikiId = detail.shikiId || catalogId;
+    return cached(`studio:${studio}:${shikiId ?? ''}:${detail.titleRu}:${detail.titleOrig}:${detail.year ?? ''}`, async () => {
+      const titleMatches = (value) => [detail.titleRu, detail.titleOrig]
+        .some((title) => title && normalize(title) === normalize(value));
+      if (studio === 'AnimeVost') {
+        const origin = 'https://api.animevost.org';
+        let id;
+        for (const name of new Set([detail.titleRu, detail.titleOrig].filter(Boolean))) {
+          const search = await (await studioRequest(origin + '/v1/search', { name })).json();
+          const matches = (Array.isArray(search.data) ? search.data : []).filter((item) =>
+            String(item.title ?? '').split(/\s+\/\s+/).some((title) =>
+              titleMatches(title.replace(/(?:\s*\[\s*\d+(?:\s*[-–]\s*\d+|\s+из\s+\d+\+?)*\s*\]\s*)+$/i, '')))
+            && (!detail.year || !item.year || Number(item.year) === detail.year));
+          if (matches.length !== 1 || !/^\d+$/.test(String(matches[0].id))) continue;
+          id = matches[0].id;
+          break;
+        }
+        if (!id) return [];
+        const rows = await (await studioRequest(origin + '/v1/playlist', { id })).json();
+        return (Array.isArray(rows) ? rows : []).map((row, index) => ({
+          position: episodePosition(row.name, index),
+          qualities: { 480: animeVostMediaUrl(row.std), 720: animeVostMediaUrl(row.hd) },
+        }));
+      }
+      const origin = 'https://sameband.studio';
+      const urlOnSite = (value, base = origin) => {
+        if (!value) return null;
+        const url = new URL(value, base);
+        return ['sameband.studio', 'sb.sameband.studio'].includes(url.hostname) ? secureUrl(url.href) : null;
+      };
+      // Anixart can omit the Shikimori ID, so match the verified first-season titles too.
+      const firstSeason = shikiId === 52991 || (!shikiId && (!detail.year || detail.year === 2023) && (
+        titleMatches('Sousou no Frieren') ||
+        titleMatches('Провожающая в последний путь Фрирен') ||
+        titleMatches('Фрирен: провожающая в последний путь')
+      ));
+      const confirmedPage = firstSeason
+        ? 'https://sb.sameband.studio/anime/37-friren-provozhajuschaja-v-poslednij-put.html'
+        : null;
+      let page = confirmedPage;
+      if (!page) {
+        const search = await (await studioRequest(origin + '/index.php?do=search', {
+          do: 'search', subaction: 'search', search_start: '0', full_search: '0', result_from: '1', story: detail.titleRu,
+        })).text();
+        const matches = new Set();
+        for (const card of search.split(/<div\b[^>]*class=["'][^"']*\bcol-auto\b[^"']*["']/i).slice(1)) {
+          const title = /<[^>]*class=["'][^"']*\bposter\b[^"']*["'][^>]*\btitle=["']([^"']+)/i.exec(card)?.[1];
+          const link = /<a\b[^>]*\bhref=["']([^"']*\/anime\/[^"']+\.html)["']/i.exec(card)?.[1];
+          if (link && title && [detail.titleRu, detail.titleOrig].some((name) =>
+            name && sameBandTitleKey(name) === sameBandTitleKey(title))) matches.add(link);
+        }
+        if (matches.size !== 1) return [];
+        page = urlOnSite([...matches][0]);
+      }
+      if (!page) return [];
+      const html = await (await studioRequest(page)).text();
+      const player = urlOnSite(/<iframe\b[^>]*\bsrc=["']([^"']*\/(?:pl\/a|v\/play)\/[^"']+)["']/i.exec(html)?.[1], page);
+      if (!player) return [];
+      const playerHtml = await (await studioRequest(player)).text();
+      const playlist = urlOnSite(/\bfile\s*:\s*["']([^"']*\/v\/list\/[^"']+)["']/i.exec(playerHtml)?.[1], player);
+      if (!playlist) return [];
+      const rows = await (await studioRequest(playlist)).json();
+      return (Array.isArray(rows) ? rows : []).map((row, index) => ({
+        position: episodePosition(String(row.title ?? '').replace(/<[^>]*>/g, ''), index),
+        qualities: Object.fromEntries(String(row.file ?? '').split(',').flatMap((item) => {
+          const match = /^\[(\d+)p\](\/v\/[^,]+\.m3u8)$/i.exec(item.trim());
+          const url = match && urlOnSite(match[2], playlist);
+          return url ? [[match[1], url]] : [];
+        })),
+      }));
+    });
+  }
+
   function animeLibHeaders(useToken = false) {
     const headers = {
       Accept: '*/*;q=0.8',
@@ -112,6 +220,7 @@ export function createCustomSources({
   }
 
   let stickyAnimeLibOrigin = animeLibApiOrigin;
+  let animeLibRetryAt = 0;
 
   async function animeLibJson(path, params = {}, { useToken = false, anonymousFallback = true } = {}) {
     const origins = stickyAnimeLibOrigin === animeLibFallbackOrigin
@@ -119,6 +228,7 @@ export function createCustomSources({
       : [animeLibApiOrigin, animeLibFallbackOrigin];
     let lastErr;
     for (const origin of origins) {
+      if (Date.now() < animeLibRetryAt) break;
       const url = new URL(path, origin);
       for (const [key, rawValue] of Object.entries(params)) {
         const values = Array.isArray(rawValue) ? rawValue : [rawValue];
@@ -143,7 +253,12 @@ export function createCustomSources({
         }
         if (response.status === 404) throw new Error('AnimeLib not found');
         if (response.status === 429) {
-          await new Promise((resolve) => setTimeout(resolve, 800));
+          const now = Date.now();
+          const retryAfter = response.headers.get('Retry-After') ?? '';
+          const until = /^\d+$/.test(retryAfter) ? now + Number(retryAfter) * 1000 : Date.parse(retryAfter);
+          animeLibRetryAt = Math.max(animeLibRetryAt, until > now ? until : now + 60_000);
+          lastErr = new Error('AnimeLib HTTP 429');
+          break;
         }
         lastErr = new Error(`AnimeLib HTTP ${response.status}`);
       } catch (err) {
@@ -377,13 +492,20 @@ export function createCustomSources({
       releaseDetail(release, releaseId),
       catalog(release, releaseId),
     ]);
-    const [videos, libData] = await Promise.all([
+    const [videos, libData, vost, band] = await Promise.all([
       entry ? yummyVideos(entry) : [],
       animeLibEpisodes(detail, releaseId),
+      studioEpisodes(detail, 'AnimeVost', entry?.shikiId),
+      studioEpisodes(detail, 'SameBand', entry?.shikiId),
     ]);
     const types = official?.types ?? [];
     const known = new Set(types.map((item) => translationKey(item.name, item.is_sub === true || item.isSub === true)));
     const external = new Map();
+    for (const [name, rows] of [['AnimeVost', vost], ['Studio Band', band]]) {
+      const key = translationKey(name);
+      const positions = new Set((rows ?? []).filter((row) => Object.values(row.qualities).some(Boolean)).map((row) => row.position));
+      if (!known.has(key) && positions.size) external.set(key, { name, positions });
+    }
     for (const video of videos ?? []) {
       const name = translationName(video.data?.dubbing);
       const key = translationKey(name);
@@ -423,10 +545,8 @@ export function createCustomSources({
       const dub = translationKey(type?.name, type?.is_sub === true || type?.isSub === true);
       if (!dub || (!entry && !detail)) return [];
       const shikiId = entry?.shikiId;
-      const [videos, uhd, libData] = await Promise.all([
+      const [videos, libData] = await Promise.all([
         entry ? yummyVideos(entry) : [],
-        shikiId && aniTypeToken ? cached(`anitype:${shikiId}`, () =>
-          json(`https://${aniTypeHost}/videos/episodes/${shikiId}`)) : [],
         animeLibEpisodes(detail, releaseId),
       ]);
       const groups = new Map();
@@ -440,15 +560,19 @@ export function createCustomSources({
         }
         groups.set(id, group);
       }
+      const studio = [['AnimeVost', 'AnimeVost', 5], ['Studio Band', 'SameBand', 6]]
+        .find(([name]) => translationKey(name) === dub);
+      if (studio) {
+        const [, name, index] = studio;
+        for (const row of (await studioEpisodes(detail, name, shikiId)) ?? []) {
+          const url = Object.values(row.qualities).find(Boolean);
+          add(index, name, row.position, url, false, { provider: 'studio', studio: name, qualities: row.qualities });
+        }
+      }
       for (const video of videos ?? []) {
         if (translationKey(video.data?.dubbing) !== dub) continue;
         const provider = yummyProvider(video);
         if (provider) add(provider.index, `${provider.name} (YummyAnime)`, video.number, provider.url, true);
-      }
-      for (const episode of Array.isArray(uhd) ? uhd : []) {
-        if (!episode.translation?.has_uhd || translationKey(episode.translation.title) !== dub) continue;
-        const url = `https://${aniTypeHost}/kodik/additional/${shikiId}/${encodeURIComponent(episode.episode)}?translation=${encodeURIComponent(episode.translation.title)}`;
-        add(3, 'AniType (4K)', episode.episode, url, false);
       }
       const dubFoundInSample = (libData.sampled ?? []).some((ep) =>
         ep.players.some((player) => animeLibTeamInfo(player).key === dub));
@@ -499,14 +623,11 @@ export function createCustomSources({
     const item = playlist?.items?.find((entry) => String(entry.episode) === position && entry.voiceStudio === dub);
     if (!item?.vkId) return null;
     const video = await json(`${api}/video/${encodeURIComponent(item.vkId)}`, cvhHeaders);
-    for (const [candidate, format] of [
-      [video.sources?.hlsUrl, 'hls'],
-      [video.sources?.dashUrl, 'dash'],
-      [video.sources?.mpegFullHdUrl, 'mp4'],
-      [video.sources?.mpegHighUrl, 'mp4'],
-    ]) {
+    let adaptiveUrl;
+    const qualityMap = {};
+    async function probe(candidate, format) {
       const url = secureUrl(candidate);
-      if (!url || !/(^|\.)okcdn\.ru$/.test(new URL(url).hostname)) continue;
+      if (!url || !/(^|\.)okcdn\.ru$/.test(new URL(url).hostname)) return null;
       try {
         const response = await fetchMedia(url, {
           headers: format === 'mp4' ? { Range: 'bytes=0-1023' } : undefined,
@@ -515,26 +636,78 @@ export function createCustomSources({
         });
         if (format !== 'mp4' && response.ok) {
           const body = (await response.text()).trimStart();
-          if (format === 'hls' && body.startsWith('#EXTM3U')) return url;
-          if (format === 'dash' && /<MPD[\s>]/.test(body)) return url + '#dash.mpd';
+          if (format === 'hls' && body.startsWith('#EXTM3U')) {
+            adaptiveUrl ??= url;
+            const heights = new Set([...body.matchAll(/RESOLUTION=\d+x(\d+)/gi)].map((match) => match[1]));
+            if (heights.size > 1) return url;
+          }
+          if (format === 'dash' && /<MPD[\s>]/.test(body)) {
+            const dashUrl = url + '#dash.mpd';
+            adaptiveUrl ??= dashUrl;
+            const heights = new Set([...body.matchAll(/<Representation\b[^>]*\bheight=["'](\d+)/gi)].map((match) => match[1]));
+            if (heights.size > 1) return dashUrl;
+          }
         } else {
           void response.body?.cancel().catch(() => {});
-          if (response.ok && /^video\//i.test(response.headers.get('content-type') ?? '')) return url;
+          if (response.ok && /^video\//i.test(response.headers.get('content-type') ?? '')) {
+            return prepareStream(url);
+          }
         }
       } catch {
-        // A broken signed stream should not prevent using the provider's embed.
+        // Continue with the other formats when a signed link fails.
       }
+      return null;
     }
-    return null;
+    const adaptive = await probe(video.sources?.hlsUrl, 'hls') ?? await probe(video.sources?.dashUrl, 'dash');
+    if (adaptive) return { url: adaptive };
+    const formats = {
+      mpeg4kUrl: 2160, mpegQhdUrl: 1440, mpegFullHdUrl: 1080, mpegHighUrl: 720,
+      mpegMediumUrl: 480, mpegLowUrl: 360, mpegLowestUrl: 240, mpegTinyUrl: 144,
+    };
+    const entries = Object.entries(formats).filter(([key]) => video.sources?.[key]);
+    for (let offset = 0; offset < entries.length; offset += 4) {
+      await Promise.all(entries.slice(offset, offset + 4).map(async ([key, height]) => {
+        const stream = await probe(video.sources[key], 'mp4');
+        if (stream) qualityMap[height] = stream;
+      }));
+    }
+    const currentQuality = Object.keys(qualityMap).at(-1);
+    if (currentQuality && (!adaptiveUrl || Object.keys(qualityMap).length > 1)) {
+      return { url: qualityMap[currentQuality], qualityMap, currentQuality };
+    }
+    return adaptiveUrl ? { url: adaptiveUrl } : null;
   }
 
   async function resolveEpisode(episode) {
     if (!episode) return null;
+    if (episode.provider === 'studio') {
+      const qualities = { ...episode.qualities };
+      if (episode.studio === 'AnimeVost' && qualities[480] && qualities[720]) {
+        const hd = await cached(`vost-hd:${qualities[720]}`, async () => {
+          const response = await fetchMedia(qualities[720], {
+            headers: { Range: 'bytes=0-31' }, signal: AbortSignal.timeout(2500),
+          });
+          void response.body?.cancel().catch(() => {});
+          return response.ok && /^video\/|^application\/octet-stream/i.test(response.headers.get('content-type') ?? '');
+        }, 20_000);
+        if (!hd) delete qualities[720];
+      }
+      const qualityMap = Object.fromEntries(Object.entries(qualities).flatMap(([height, url]) => {
+        const stream = url && prepareStream(url);
+        return stream ? [[height, stream]] : [];
+      }));
+      const currentQuality = Object.keys(qualityMap).at(-1);
+      return currentQuality ? { ...episode, url: qualityMap[currentQuality], qualityMap, currentQuality } : null;
+    }
     if (episode.iframe) {
       try {
         const embed = new URL(episode.url);
         let url;
-        if (embed.hostname === cvhHost) url = await resolveCvh(embed.href);
+        if (embed.hostname === cvhHost) {
+          const resolved = await cached(`cvh-stream:${embed.href}`, () => resolveCvh(embed.href), 20_000);
+          const playable = resolved?.qualityMap ? resolved.url : resolved?.url && prepareStream(resolved.url);
+          return playable ? { ...episode, ...resolved, url: playable, iframe: false } : null;
+        }
         if (embed.hostname === 'alloha.yani.tv' && resolveAlloha) {
           url = await cached(`alloha:${embed.href}`, () => resolveAlloha(embed.href), 20_000);
         }
@@ -589,6 +762,7 @@ export function createCustomSources({
           name: episode.name,
           url: qualityMap[currentQuality],
           iframe: false,
+          availabilityVerified: Boolean(resolveAnimeLibStream),
           qualityMap,
           currentQuality,
         };
@@ -596,19 +770,7 @@ export function createCustomSources({
         return null;
       }
     }
-    try {
-      const payload = await json(episode.url, { authorization: `Bearer ${aniTypeToken}` });
-      const qualityMap = {};
-      for (const item of Array.isArray(payload) ? payload : []) {
-        const height = Number(item.quality);
-        const url = secureUrl(item.src);
-        if (Number.isInteger(height) && height > 0 && url) qualityMap[height] = url;
-      }
-      const currentQuality = qualityMap['2160'] ? '2160' : Object.keys(qualityMap).at(-1);
-      return currentQuality ? { ...episode, url: qualityMap[currentQuality], qualityMap, currentQuality } : null;
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   return {
@@ -624,11 +786,21 @@ export function createCustomSources({
         return official.value;
       }
       const baseline = official.status === 'fulfilled' ? official.value : null;
+      const existing = new Set((baseline?.sources ?? []).map(({ name }) => normalize(name)));
       return {
         ...baseline,
         code: 0,
-        sources: [...(baseline?.sources ?? []), ...extra.map(({ id, name, episodes }) =>
-          ({ id, name, episodes_count: episodes.size }))],
+        sources: [...(baseline?.sources ?? []), ...extra.filter(({ name }) => !existing.has(normalize(name))).map(({ id, name, episodes }) =>
+          ({
+            id, name, episodes_count: episodes.size,
+            max_quality: Math.max(0, ...Array.from(episodes.values(), (episode) => {
+              const qualities = episode.qualities;
+              const heights = Array.isArray(qualities)
+                ? qualities.map((item) => Number(item?.quality))
+                : Object.keys(qualities ?? {}).filter((height) => qualities[height]).map(Number);
+              return Math.max(0, ...heights.filter(Number.isFinite));
+            })) || undefined,
+          }))],
       };
     },
 

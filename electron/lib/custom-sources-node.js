@@ -44,7 +44,6 @@ function getCustomSources() {
         resolveAnimeLibStream,
         prepareStream: require('./source-stream-protocol').sourceStreamUrl,
       }),
-      aniTypeToken: process.env.ANITYPE_ENABLED === 'true' ? process.env.ANITYPE_TOKEN?.trim() : '',
       aniLibToken: process.env.ANIMELIB_TOKEN?.trim() || process.env.MANGALIB_TOKEN?.trim() || '',
       animeLibVideoBaseUrl: process.env.ANIMELIB_VIDEO_BASE_URL?.trim() || undefined,
       animeLibVideoPathPrefix: process.env.ANIMELIB_VIDEO_PATH_PREFIX?.trim() || undefined,

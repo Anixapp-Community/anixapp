@@ -9,7 +9,6 @@ type ReleaseEndpoints = {
 export function createCustomSources(options?: {
   fetcher?: typeof fetch;
   fetchMedia?: typeof fetch;
-  aniTypeToken?: string;
   aniLibToken?: string;
   animeLibVideoBaseUrl?: string;
   animeLibVideoPathPrefix?: string;

@@ -13,6 +13,8 @@ function isAnimeLibMediaHost(host) {
 }
 
 function getSourceOrigin(host) {
+  if (host === 'sameband.studio' || host === 'sb.sameband.studio') return 'https://' + host;
+  if (host === 'video.animetop.info' || host === 'animevost.org' || host.endsWith('.animevost.org')) return 'https://animevost.org';
   if (host === 'tut-video.net' || host.endsWith('.tut-video.net')) return 'https://player.aksor.tv';
   if (host.endsWith('.userplay.live')) return 'https://alloha.yani.tv';
   if (host.endsWith('.okcdn.ru')) return 'https://player.cdnvideohub.com';
@@ -68,6 +70,39 @@ function rewritePlaylist(text, base) {
 }
 
 const STREAM_CONNECT_TIMEOUT_MS = 15000;
+
+async function probeSourceStream(raw, manifest) {
+  if (typeof raw !== 'string' || !raw.startsWith(SCHEME + '://')) return { status: 400 };
+  const url = new URL(raw.replace(/^anix-stream:/, 'https:'));
+  if (!sourceStreamUrl(url.href)) return { status: 403 };
+  const response = await fetchSourceStream(url, {
+    headers: manifest ? {} : { Range: 'bytes=0-31' },
+    signal: AbortSignal.timeout(STREAM_CONNECT_TIMEOUT_MS),
+  });
+  const type = response.headers.get('Content-Type') ?? '';
+  const result = { status: response.status, type, retryAfter: response.headers.get('Retry-After') };
+  if (!manifest || !response.ok || !response.body) {
+    void response.body?.cancel().catch(() => {});
+    return result;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let size = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 512 * 1024) return { status: 413 };
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+  } finally {
+    void reader.cancel().catch(() => {});
+  }
+  return { ...result, text: text.trimStart().startsWith('#EXTM3U') ? rewritePlaylist(text, url.href) : text };
+}
 
 function normalizeAcceptRanges(value) {
   if (!value) return 'bytes';
@@ -142,5 +177,6 @@ module.exports = {
   setupSourceStreamProtocol,
   sourceStreamUrl,
   fetchSourceStream,
+  probeSourceStream,
   buildStreamResponseHeaders,
 };

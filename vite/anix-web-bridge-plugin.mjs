@@ -44,7 +44,12 @@ function shouldTryNextOrigin(res, path, originIndex, total) {
     path.startsWith('/uploads/')
     || path.startsWith('/badges/')
     || path.startsWith('/api/badges/images/')
+    || isAnixmediaPath(path)
   ) && res.status === 404;
+}
+
+function isAnixmediaPath(path) {
+  return path.startsWith('/api/anixapp/media/') || path.startsWith('/api/anixapp/files/');
 }
 
 /** ffmpeg download / render can take minutes — never apply the short proxy timeout. */
@@ -251,7 +256,10 @@ async function proxyCdn(url, res) {
 
 async function proxyAnixback(req, res, url) {
   const path = url.replace(/^\/__anixback/, '') || '/';
-  const origins = anixbackTargetOrigins();
+  // Production serves these paths through nginx and anixmedia, outside anixback.
+  const origins = isAnixmediaPath(path)
+    ? [...new Set([process.env.ANIXMEDIA_PROXY_TARGET?.trim().replace(/\/$/, '') || ANIXBACK_PROD_ORIGIN, ...anixbackTargetOrigins()])]
+    : anixbackTargetOrigins();
 
   try {
     const headers = {
@@ -317,6 +325,7 @@ async function proxyAnixback(req, res, url) {
     const outHeaders = {};
     for (const [key, value] of upstream.headers.entries()) {
       const lower = key.toLowerCase();
+      if (lower === 'content-length' && upstream.headers.has('content-encoding')) continue;
       if (['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control', 'etag', 'last-modified'].includes(lower)) {
         outHeaders[key] = value;
       }

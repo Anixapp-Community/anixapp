@@ -35,6 +35,7 @@ export interface DubberItem {
 export interface SourceItem {
   id:   number;
   name: string;
+  availability?: import('./source-availability').SourceAvailability;
 }
 
 export interface LobbyParticipant {

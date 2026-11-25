@@ -145,6 +145,19 @@ export function isHlsUrl(url: string): boolean {
   return false;
 }
 
+export function toResolvedMediaUrl(url: string): string {
+  const absolute = url.startsWith('//') ? `https:${url}` : url;
+  try {
+    const parsed = new URL(absolute);
+    if (/solodcdn|kodik-storage|zerocdn|animedia|kodik-cdn/i.test(parsed.hostname)
+      && /\.mp4$/i.test(parsed.pathname)) {
+      parsed.pathname += ':hls:manifest.m3u8';
+      return parsed.href;
+    }
+  } catch { /* keep the original URL */ }
+  return absolute;
+}
+
 export function isDashUrl(url: string): boolean {
   if (/\.mpd(?:[?#]|$)/i.test(url)) return true;
   try {
@@ -256,19 +269,6 @@ export async function resolveEpisodeUrl(
       if (dlHeaders.Referer) embedReferer = dlHeaders.Referer;
 
       if (directUrl && !isUnplayableVideoSrc(directUrl)) {
-        const toPlayable = (u: string) => {
-          const abs = u.startsWith('//') ? `https:${u}` : u;
-          if (/:hls:/i.test(abs)) return abs;
-          try {
-            const parsed = new URL(abs);
-            if (/solodcdn|kodik-storage|zerocdn|animedia|kodik-cdn/i.test(parsed.hostname)
-              && /\.mp4$/i.test(parsed.pathname)) {
-              parsed.pathname += ':hls:manifest.m3u8';
-              return parsed.href;
-            }
-          } catch { /* keep */ }
-          return abs;
-        };
         const raw = directUrl.startsWith('//') ? `https:${directUrl}` : directUrl;
 
         if (Object.keys(remoteMap).length > 0) {
@@ -276,14 +276,14 @@ export async function resolveEpisodeUrl(
             const rawEntry = typeof v === 'string' ? v : String(v ?? '');
             if (!rawEntry || isUnplayableVideoSrc(rawEntry)) continue;
             const abs = rawEntry.startsWith('//') ? `https:${rawEntry}` : rawEntry;
-            qualityMap[k.replace(/p$/, '')] = toPlayable(abs);
+            qualityMap[k.replace(/p$/, '')] = toResolvedMediaUrl(abs);
           }
           const preferred = String(res?.quality ?? '').replace(/p$/i, '');
           const best = qualityMap[preferred] ? preferred : QUALITY_PRIORITY.find((k) => qualityMap[k]) || Object.keys(qualityMap)[0];
           currentQuality = best || '';
-          playUrl = currentQuality ? qualityMap[currentQuality] : toPlayable(raw);
+          playUrl = currentQuality ? qualityMap[currentQuality] : toResolvedMediaUrl(raw);
         } else {
-          playUrl = toPlayable(raw);
+          playUrl = toResolvedMediaUrl(raw);
           if (isSibnet) {
             qualityMap = { '720': playUrl };
             currentQuality = '720';
@@ -361,7 +361,7 @@ export async function resolveEpisodeUrlWithRetry(
   return lastResult;
 }
 
-function unwrapMediaProxyUrl(url: string): string {
+export function unwrapMediaProxyUrl(url: string): string {
   try {
     const u = url.startsWith('/') ? new URL(url, 'http://local.invalid') : new URL(url);
     if (u.pathname === '/__anix/media' || u.pathname.endsWith('/__anix/media')

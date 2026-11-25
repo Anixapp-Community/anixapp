@@ -98,13 +98,14 @@
         id: 'quality',
         label: currentQuality === 'auto' ? 'Качество · Авто' : currentQuality ? `Качество · ${currentQuality}p` : 'Качество',
         icon: iconSettings(18),
-        children: sortedQualities.map((q) => ({
+        type: sortedQualities.length === 1 ? 'label' : undefined,
+        children: sortedQualities.length > 1 ? sortedQualities.map((q) => ({
           id: `quality:${q}`,
           label: q === 'auto' ? 'Авто' : `${q}p`,
           type: 'radio' as const,
           checked: currentQuality === q,
           keepOpen: true,
-        })),
+        })) : undefined,
       });
     }
 

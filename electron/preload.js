@@ -576,6 +576,7 @@ contextBridge.exposeInMainWorld('anixApi', {
     getEpisode: (releaseId, sourceId, episodePosition) => ipcRenderer.invoke('anix:getEpisode', releaseId, sourceId, episodePosition),
     getEpisodeUpdates: (releaseId, page = 0) => ipcRenderer.invoke('anix:getEpisodeUpdates', releaseId, page),
     getDirectVideoLink: (embedUrl) => ipcRenderer.invoke('anix:getDirectVideoLink', embedUrl),
+    probeSourceStream: (url, manifest) => ipcRenderer.invoke('anix:probeSourceStream', url, manifest),
     getVideos: (releaseId) => ipcRenderer.invoke('anix:getVideos', releaseId),
     getVideoInCategory: (releaseId, categoryId, page = 1) => ipcRenderer.invoke('anix:getVideoInCategory', releaseId, categoryId, page),
     addFavorite: (releaseId) => ipcRenderer.invoke('anix:addToFavorites', releaseId),

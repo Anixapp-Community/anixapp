@@ -201,6 +201,7 @@ describe('AnimeLib custom source integration', () => {
   it('resolves YummyAnime CVH with Chrome User-Agent and prefers HLS', async () => {
     const { createCustomSources } = await import('../custom-sources.mjs');
     const seenUa = [];
+    let progressive = false;
     const fetcher = async (input, init) => {
       const url = new URL(typeof input === 'string' ? input : input.toString());
       const ua = init?.headers?.['User-Agent'] ?? '';
@@ -226,11 +227,19 @@ describe('AnimeLib custom source integration', () => {
           sources: {
             dashUrl: 'https://vd1.okcdn.ru/?id=1',
             hlsUrl: 'https://vd1.okcdn.ru/video.m3u8?id=1',
+            ...(progressive && {
+              mpegFullHdUrl: 'https://vd1.okcdn.ru/1080.mp4',
+              mpegHighUrl: 'https://vd1.okcdn.ru/720.mp4',
+              mpegMediumUrl: 'https://vd1.okcdn.ru/480.mp4',
+            }),
           },
         });
       }
       if (url.hostname === 'vd1.okcdn.ru' && url.pathname === '/video.m3u8') {
         return new Response('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nchunk.m3u8\n', { status: 200 });
+      }
+      if (url.hostname === 'vd1.okcdn.ru' && /^\/(720|1080)\.mp4$/.test(url.pathname)) {
+        return new Response(new Uint8Array(32), { status: 206, headers: { 'Content-Type': 'video/mp4' } });
       }
       return jsonResponse({}, 404);
     };
@@ -250,6 +259,48 @@ describe('AnimeLib custom source integration', () => {
     const ep = await custom.getEpisode(releaseEndpoints, 1, cvh.id, 1);
     assert.equal(ep.episode.url, 'https://vd1.okcdn.ru/video.m3u8?id=1');
     assert.ok(seenUa.every((ua) => ua.includes('Chrome/122.0.0.0')));
+    progressive = true;
+    const direct = await createCustomSources({ fetcher }).getEpisode(releaseEndpoints, 1, cvh.id, 1);
+    assert.deepEqual(direct.episode.qualityMap, {
+      720: 'https://vd1.okcdn.ru/720.mp4',
+      1080: 'https://vd1.okcdn.ru/1080.mp4',
+    });
+  });
+
+  it('adds studio sources to an existing dub and exposes a new studio dub', async () => {
+    const { createCustomSources } = await import('../custom-sources.mjs');
+    const fetcher = async (input) => {
+      const url = new URL(input);
+      if (url.hostname === 'api.animevost.org' && url.pathname === '/v1/search') {
+        return jsonResponse({ data: [{ id: 123, title: 'Sousou no Frieren [1-28 из 28]', year: '2023' }] });
+      }
+      if (url.hostname === 'api.animevost.org' && url.pathname === '/v1/playlist') {
+        return jsonResponse([{ name: '1 episode', std: 'https://media.animevost.org/1.mp4' }]);
+      }
+      if (url.hostname === 'sb.sameband.studio') {
+        if (url.pathname.startsWith('/anime/37-')) return new Response('<iframe src="/v/play/frieren.html"></iframe>');
+        if (url.pathname === '/v/play/frieren.html') return new Response('new Playerjs({file:"/v/list/frieren.txt"})');
+        if (url.pathname === '/v/list/frieren.txt') return jsonResponse([{ title: '1', file: '[480p]/v/480.m3u8,[720p]/v/720.m3u8' }]);
+      }
+      return jsonResponse({}, 404);
+    };
+    const release = {
+      async info() { return { release: { title_original: 'Sousou no Frieren', year: 2023 } }; },
+      async getDubbers() { return { code: 0, types: [{ id: 10, name: 'AnimeVost' }] }; },
+      async getDubberSources() { return { code: 0, sources: [{ id: 9, name: 'Kodik' }] }; },
+    };
+    const custom = createCustomSources({ fetcher, prepareStream: sourceStreamUrl });
+    const { types } = await custom.getDubbers(release, 1);
+    assert.deepEqual(types.map(({ name }) => name), ['AnimeVost', 'Studio Band']);
+    const vost = await custom.getDubberSources(release, 1, 10);
+    assert.deepEqual(vost.sources.map(({ name }) => name), ['Kodik', 'AnimeVost']);
+    const band = await custom.getDubberSources(release, 1, types[1].id);
+    assert.equal(band.sources[0].max_quality, 720);
+    const { episode } = await custom.getEpisode(release, 1, band.sources[0].id, 1);
+    assert.deepEqual(episode.qualityMap, {
+      480: 'anix-stream://sb.sameband.studio/v/480.m3u8',
+      720: 'anix-stream://sb.sameband.studio/v/720.m3u8',
+    });
   });
 
   it('prefers main AnimeLib series over Mini Anime spinoff when long title_original only matches spinoff', async () => {

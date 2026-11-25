@@ -17,6 +17,13 @@ function toNonNegativeInt(value) {
 }
 
 function register(deps) {
+  ipcMain.handle('anix:probeSourceStream', async (_, url, manifest) => {
+    try {
+      return await require('../lib/source-stream-protocol').probeSourceStream(url, manifest === true);
+    } catch (error) {
+      return { status: 0, timeout: error?.name === 'TimeoutError' };
+    }
+  });
   const {
     loggedHandle,
     handleAnixError,

@@ -322,10 +322,10 @@ export interface AnixApi {
       }>;
     }>;
     getDubberSources: (releaseId: number, dubberId: number) => Promise<{
-      sources?: Array<{ id: number; name: string; episode_count?: number; quality?: number }>;
+      sources?: Array<{ id: number; name: string; episode_count?: number; episodes_count?: number; quality?: number; max_quality?: number }>;
     }>;
     getEpisodes: (releaseId: number, dubberId: number, sourceId: number, sort?: number) => Promise<{ episodes?: Array<{ position: number; name: string; url: string; iframe: boolean; is_watched?: boolean }> }>;
-    getEpisode: (releaseId: number, sourceId: number, episodePosition: number) => Promise<{ episode?: { position: number; name: string; url: string; iframe: boolean; qualityMap?: Record<string, string>; currentQuality?: string } }>;
+    getEpisode: (releaseId: number, sourceId: number, episodePosition: number) => Promise<{ episode?: { position: number; name: string; url: string; iframe: boolean; qualityMap?: Record<string, string>; currentQuality?: string; availabilityVerified?: boolean } }>;
     getEpisodeUpdates: (releaseId: number, page?: number) => Promise<{
       content?: Array<{
         last_episode_update_date?: number;
@@ -339,6 +339,7 @@ export interface AnixApi {
       total_page_count?: number;
       current_page?: number;
     }>;
+    probeSourceStream?: (url: string, manifest: boolean) => Promise<{ status: number; type?: string; text?: string; timeout?: boolean; retryAfter?: string | null }>;
     getDirectVideoLink: (embedUrl: string) => Promise<{
       directUrl: string | null;
       quality: string | null;

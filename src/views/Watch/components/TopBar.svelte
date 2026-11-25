@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sourcePlayerLabel } from '../../../utils/dubber-sources';
   import type { EpisodeItem, DubberItem, DownloadedEpisodeItem, SourceItem } from '../_types';
   import UiV2Button from '../../../components/uikit-v2/UiV2Button.svelte';
   import UiV2RoundButton from '../../../components/uikit-v2/UiV2RoundButton.svelte';
@@ -124,8 +125,9 @@
   const sourceLabel = $derived.by(() => {
     if (localMode) return sourceName || 'Файл';
     const fromList = sources.find((s) => String(s.id) === String(currentSourceId));
-    if (fromList?.name) return fromList.name;
-    if (sourceName && sourceName !== dubberName) return sourceName;
+    if (fromList?.name) return sourcePlayerLabel(fromList.name, dubberName);
+    const label = sourcePlayerLabel(sourceName, dubberName);
+    if (sourceName && (sourceName !== dubberName || label !== sourceName)) return label;
     return 'Источник';
   });
 </script>
@@ -236,6 +238,7 @@
   anchor={sourceAnchor}
   {sources}
   currentSourceName={sourceName}
+  {dubberName}
   {currentSourceId}
   loading={popoverLoading && popoverType === 'source'}
   onselect={(src) => { onselectSource(src); onclosePopover(); }}
