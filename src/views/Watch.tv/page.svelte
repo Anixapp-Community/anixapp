@@ -18,6 +18,9 @@
   import { setSkipAutoPref } from '../Watch/_skipPrefs';
   import { WatchResume } from '../Watch/_useWatchResume.svelte';
   import { episodeDisplayNumber } from '../../utils/episode-display';
+  import { isFillerEpisode } from '../../utils/episode-filler';
+  import { formatQualityHeight, qualityHeight } from '../../utils/dubber-meta';
+  import type { EpisodeItem } from '../Watch/_types';
   import { scheduleFocusTvOverlayContent, focusTvWatchPlay, focusTvWatchResume } from '../../services/tv-navigation';
   import { tvInputDevice, type TvInputAction } from '../../services/tv-input';
   import TvInputGlyph from '../../components/tv/TvInputGlyph.svelte';
@@ -35,7 +38,7 @@
   } from '../../components/icons';
 
   type LoadState = 'idle' | 'loading' | 'ready' | 'error';
-  type Episode = { position: number; name: string; url: string; iframe: boolean };
+  type Episode = EpisodeItem & { url: string; iframe: boolean; qualityMap?: Record<string, string>; currentQuality?: string };
 
   const params = getWatchParams();
   const releaseId = params.get('releaseId') || '';
@@ -119,6 +122,10 @@
     if (item.name?.trim()) return item.name.trim();
     return num != null ? `Серия ${num}` : 'Серия';
   });
+  const currentEpisodeIsFiller = $derived(isFillerEpisode(title, episodes.find((item) => item.position === ep) ?? { position: ep }));
+  const currentEpisodeQuality = $derived(Math.max(
+    qualityHeight(currentQuality), ...(Object.keys(qualityMap)).map(qualityHeight),
+  ));
   const topMetaLine = $derived.by(() => {
     return [epLabel, dubberName, sourceName].filter(Boolean).join(' · ');
   });
@@ -1103,7 +1110,7 @@
         <header class="tv-watch__top">
           <h1 class="tv-watch__top-title">{title}</h1>
           <div class="tv-watch__top-chips">
-            <span class="tv-watch__chip tv-watch__chip--accent">{epLabel}</span>
+            <span class="tv-watch__chip tv-watch__chip--accent">{epLabel}{currentEpisodeIsFiller ? ' · Филлер' : ''}</span>
             {#if dubberName}<span class="tv-watch__chip">{dubberName}</span>{/if}
             {#if sourceName}<span class="tv-watch__chip">{sourceName}</span>{/if}
           </div>
@@ -1253,7 +1260,7 @@
                 <span class="tv-watch__dock-icon" aria-hidden="true">{@html iconFilm(22)}</span>
                 <span class="tv-watch__dock-text">
                   <span class="tv-watch__dock-label">Серии</span>
-                  <span class="tv-watch__dock-value">{epLabel}</span>
+                  <span class="tv-watch__dock-value">{epLabel}{currentEpisodeIsFiller ? ' · Филлер' : ''}</span>
                 </span>
               </button>
               {#if hasNextEp}
@@ -1335,6 +1342,9 @@
       <div class="tv-watch__panel-list">
         {#each episodes as item (item.position)}
           {@const num = episodeDisplayNumber(item, episodes)}
+          {@const quality = formatQualityHeight(Math.max(
+            qualityHeight(item.quality), qualityHeight(item.max_quality), item.position === ep ? currentEpisodeQuality : 0,
+          ))}
           <button
             type="button"
             class="tv-watch__ep-item"
@@ -1343,6 +1353,8 @@
           >
             <span class="tv-watch__ep-num">{num ?? '•'}</span>
             <span class="tv-watch__ep-name">{item.name?.trim() || (num != null ? `Серия ${num}` : 'Серия')}</span>
+            {#if isFillerEpisode(title, item)}<span class="tv-watch__ep-filler">Филлер</span>{/if}
+            {#if quality}<span class="tv-watch__ep-quality">{quality}</span>{/if}
             {#if item.position === ep}
               <span class="tv-watch__ep-now">Сейчас</span>
             {/if}

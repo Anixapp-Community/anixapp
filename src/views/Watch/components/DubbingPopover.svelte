@@ -3,7 +3,7 @@
   import UiV2PopupMenu, { type UiV2PopupMenuItem } from '../../../components/uikit-v2/UiV2PopupMenu.svelte';
   import { iconDownload, iconMic, iconPin } from '../../../components/icons';
   import { resolveCdnAssetUrl } from '../../../utils/posterUrl';
-  import { formatDubberQuality, isDubberNovelty, sortDubbersPinnedFirst } from '../../../utils/dubber-meta';
+  import { formatQualityHeight, qualityHeight, isDubberNovelty, sortDubbersPinnedFirst } from '../../../utils/dubber-meta';
 
   interface Props {
     open: boolean;
@@ -66,9 +66,6 @@
 
   function dubLabel(dub: DubberItem): string {
     const parts = [dub.name];
-    if (isDubberNovelty(dub.id, lastEpisodeTypeUpdateId)) parts.push('Новинка');
-    const quality = formatDubberQuality(dub.quality);
-    if (quality) parts.push(quality);
     return parts.join(' · ');
   }
 
@@ -82,6 +79,9 @@
     return {
       id: `dub:${dub.id}`,
       label: dubLabel(dub),
+      badgeText: isDubberNovelty(dub.id, lastEpisodeTypeUpdateId) ? 'Новинка' : undefined,
+      badgeTone: 'accent',
+      valueText: formatQualityHeight(Math.max(qualityHeight(dub.quality), qualityHeight(dub.max_quality))) ?? undefined,
       type: 'radio',
       checked: String(dub.id) === currentDubberId && !currentDownloadedPath,
       icon: dubIcon(dub),

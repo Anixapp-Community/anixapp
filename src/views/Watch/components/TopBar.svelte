@@ -7,6 +7,7 @@
   import { fade } from 'svelte/transition';
   import { iconChevronDown, iconLobbyCollapse, iconLobbyCreate, iconLobbyExpand } from '../../../components/icons';
   import EpisodesPopover from './EpisodesPopover.svelte';
+  import { isFillerEpisode } from '../../../utils/episode-filler';
   import DubbingPopover from './DubbingPopover.svelte';
   import SourcesPopover from './SourcesPopover.svelte';
   import { episodeHistoryLabel } from '../../../utils/episode-display';
@@ -14,6 +15,7 @@
   interface Props {
     ep: number;
     title: string;
+    currentEpisodeQuality?: number;
     dubberName: string;
     sourceName: string;
     episodes: EpisodeItem[];
@@ -43,7 +45,7 @@
   }
 
   let {
-    ep, title, dubberName, sourceName,
+    ep, title, currentEpisodeQuality, dubberName, sourceName,
     episodes, dubbers, sources,
     downloadedEpisodes, downloadedPositions, localMode, currentDownloadedPath,
     currentDubberId, currentSourceId, popoverType, popoverLoading, lastEpisodeTypeUpdateId,
@@ -181,7 +183,9 @@
         <UiV2Button
           size="sm"
           variant="chrome"
-          label={episodeLabel}
+          label={isFillerEpisode(title, episodes.find((episode) => episode.position === ep) ?? { position: ep })
+            ? `${episodeLabel} · Филлер`
+            : episodeLabel}
           ariaHaspopup="menu"
           ariaExpanded={popoverType === 'series'}
           onclick={(e) => toggleTrigger('series', e)}
@@ -251,6 +255,8 @@
   y={seriesY}
   anchor={seriesAnchor}
   {episodes}
+  {title}
+  {currentEpisodeQuality}
   {downloadedPositions}
   {localMode}
   currentEp={ep}

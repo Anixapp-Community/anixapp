@@ -3,6 +3,8 @@
   import UiV2PopupMenu, { type UiV2PopupMenuItem } from '../../../components/uikit-v2/UiV2PopupMenu.svelte';
   import { iconCircleCheck, iconDownload } from '../../../components/icons';
   import { episodeDisplayLabel } from '../../../utils/episode-display';
+  import { isFillerEpisode } from '../../../utils/episode-filler';
+  import { formatQualityHeight, qualityHeight } from '../../../utils/dubber-meta';
 
   interface Props {
     open: boolean;
@@ -10,6 +12,8 @@
     y: number;
     anchor?: HTMLElement | null;
     episodes: EpisodeItem[];
+    title: string;
+    currentEpisodeQuality?: number;
     currentEp: number;
     loading: boolean;
     downloadedPositions?: number[];
@@ -20,7 +24,7 @@
 
   let {
     open, x, y, anchor = null,
-    episodes, currentEp, loading,
+    episodes, title, currentEp, currentEpisodeQuality = 0, loading,
     downloadedPositions = [],
     localMode = false,
     onselect, onclose,
@@ -28,7 +32,7 @@
 
   const downloadedSet = $derived(new Set(downloadedPositions));
 
-  const baseEpisodes = $derived.by(() => {
+  const baseEpisodes = $derived.by((): EpisodeItem[] => {
     if (localMode) {
       // В локальном режиме не подмешиваем онлайн-серии тайтла
       const fromApi = episodes.filter((e) => downloadedSet.has(e.position));
@@ -69,6 +73,11 @@
     return baseEpisodes.map((ep) => ({
       id: `ep:${ep.position}`,
       label: episodeDisplayLabel(ep, baseEpisodes),
+      badgeText: isFillerEpisode(title, ep) ? 'Филлер' : undefined,
+      valueText: formatQualityHeight(Math.max(
+        qualityHeight(ep.max_quality), qualityHeight(ep.quality),
+        ep.position === currentEp ? currentEpisodeQuality : 0,
+      )) ?? undefined,
       type: 'radio' as const,
       checked: ep.position === currentEp,
       icon: episodeIcon(ep),

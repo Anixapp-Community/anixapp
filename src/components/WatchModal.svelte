@@ -1163,6 +1163,10 @@
       sourcesLoading = false;
       sourcesError = !Number.isFinite(releaseId) || releaseId <= 0 ? 'Неверный релиз' : 'API недоступно';
     } else {
+      void api.release.info?.(releaseId).then((infoRes: { release?: unknown }) => {
+        lastEpisodeTypeUpdateId = readLastEpisodeTypeUpdateId(infoRes?.release ?? infoRes);
+      }).catch(() => {});
+
       api.release.getDubbers(releaseId)
         .then(async (res: { types?: Dubber[] }) => {
           const types = (res?.types ?? []).filter(d => !isDubberBlacklisted(String(d.name ?? '')));
@@ -1174,10 +1178,6 @@
           dubbers = sortDubbersPinnedFirst(types);
           await tick();
           focusTvModalContent();
-
-          void api.release.info?.(releaseId).then((infoRes: { release?: unknown }) => {
-            lastEpisodeTypeUpdateId = readLastEpisodeTypeUpdateId(infoRes?.release ?? infoRes);
-          }).catch(() => {});
 
           // «Продолжить»: сразу последняя озвучка и серия, которые смотрел пользователь.
           const targetDubber = target && types.find((d) => d.id === target.dubberId);
@@ -1742,12 +1742,7 @@
                     {/if}
 
                     <span class="watch-modal__variant-info">
-                      <span class="watch-modal__variant-name-row">
-                        <span class="watch-modal__variant-name">{d.name}</span>
-                        {#if isNew}
-                          <span class="watch-modal__new-badge">НОВИНКА</span>
-                        {/if}
-                      </span>
+                      <span class="watch-modal__variant-name">{d.name}</span>
                       <span class="watch-modal__variant-meta">
                         {#if epLabel}
                           <span class="watch-modal__variant-ep">{epLabel}</span>
@@ -1766,9 +1761,14 @@
                     </span>
 
                     {#if !d.is_external}
-                      <span class="watch-modal__variant-views-badge">
-                        {@html eyeIconSvg}
-                        {fmtViewsShort(viewCount)}
+                      <span class="watch-modal__variant-stats">
+                        {#if isNew}
+                          <span class="watch-modal__new-badge">Новинка</span>
+                        {/if}
+                        <span class="watch-modal__variant-views-badge">
+                          {@html eyeIconSvg}
+                          {fmtViewsShort(viewCount)}
+                        </span>
                       </span>
                     {/if}
                   </div>

@@ -27,6 +27,9 @@
   import { WatchResume } from '../Watch/_useWatchResume.svelte';
   import ResumePrompt from '../Watch/components/ResumePrompt.svelte';
   import { episodeDisplayNumber } from '../../utils/episode-display';
+  import { isFillerEpisode } from '../../utils/episode-filler';
+  import { formatQualityHeight, qualityHeight } from '../../utils/dubber-meta';
+  import type { EpisodeItem } from '../Watch/_types';
   import { isCapacitorNative } from '../../native/anix-api-native';
   import { getMediaLevels, setSystemVolume, setWindowBrightness } from '../../native/anix-media-levels';
   import { loadAppSettings, saveAppSettings } from '../../utils/app-settings';
@@ -67,7 +70,7 @@
   } from '../../components/icons';
 
   type LoadState = 'loading' | 'ready' | 'error';
-  type Episode = { position: number; name: string; url: string; iframe: boolean; qualityMap?: Record<string, string>; currentQuality?: string };
+  type Episode = EpisodeItem & { url: string; iframe: boolean; qualityMap?: Record<string, string>; currentQuality?: string };
   type Sheet = 'episodes' | 'settings' | null;
   type Gesture = 'none' | 'seek' | 'volume' | 'brightness';
 
@@ -158,7 +161,11 @@
     const num = episodeDisplayNumber(item, episodes);
     return num != null ? `${num} серия` : 'Серия';
   });
-  const subtitle = $derived([epLabel, dubberName, sourceName].filter(Boolean).join(' · '));
+  const currentEpisodeIsFiller = $derived(isFillerEpisode(title, episodes.find((item) => item.position === ep) ?? { position: ep }));
+  const currentEpisodeQuality = $derived(Math.max(
+    qualityHeight(currentQuality), ...(streamQuality?.heights ?? Object.keys(qualityMap)).map(qualityHeight),
+  ));
+  const subtitle = $derived([epLabel, currentEpisodeIsFiller ? 'Филлер' : '', dubberName, sourceName].filter(Boolean).join(' · '));
   const sausages = $derived(buildTimelineSausages(duration, skipMarks?.opening ?? null, skipMarks?.ending ?? null));
   const showLoading = $derived(loadState === 'loading' || switching || (loadState === 'ready' && useVideo && !firstFrame));
   const rateLabel = $derived(playbackRate === 1 ? '1×' : `${playbackRate}×`);
@@ -1307,9 +1314,14 @@
         {#if sheet === 'episodes'}
           {#each episodes as item (item.position)}
             {@const num = episodeDisplayNumber(item, episodes)}
+            {@const quality = formatQualityHeight(Math.max(
+              qualityHeight(item.quality), qualityHeight(item.max_quality), item.position === ep ? currentEpisodeQuality : 0,
+            ))}
             <button type="button" class="mw__row" class:mw__row--on={item.position === ep} onclick={() => selectEpisode(item.position)}>
               <span class="mw__row-num">{num ?? '•'}</span>
               <span class="mw__row-text">{item.name?.trim() || (num != null ? `${num} серия` : 'Серия')}</span>
+              {#if isFillerEpisode(title, item)}<span class="mw__row-filler">Филлер</span>{/if}
+              {#if quality}<span class="mw__row-quality">{quality}</span>{/if}
               {#if item.position === ep}<span class="mw__row-now">Сейчас</span>{/if}
             </button>
           {:else}
@@ -1737,6 +1749,16 @@
   .mw__row--on .mw__row-num { color: inherit; }
   .mw__row-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mw__row-now { flex: none; padding: 2px 8px; border-radius: 6px; background: rgba(208, 188, 255, 0.18); font-size: 12px; }
+  .mw__row-filler, .mw__row-quality {
+    flex: none;
+    padding: 2px 6px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    background: rgb(255 255 255 / 12%);
+    color: #fff;
+  }
+  .mw__row-filler { background: #f4c65e; color: #241a06; }
   .mw__row-check { flex: none; display: inline-flex; }
   .mw__empty { margin: 20px; color: rgba(255, 255, 255, 0.6); }
   .mw__sheet-sublabel { margin: 14px 20px 8px; font-size: 13px; font-weight: 400; color: rgba(255, 255, 255, 0.6); }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SourceItem } from '../_types';
   import { sourcePlayerLabel } from '../../../utils/dubber-sources';
+  import { formatQualityHeight, qualityHeight } from '../../../utils/dubber-meta';
   import { sourceAvailabilityLabels } from '../source-availability';
   import UiV2PopupMenu, { type UiV2PopupMenuItem } from '../../../components/uikit-v2/UiV2PopupMenu.svelte';
 
@@ -32,6 +33,7 @@
     return sources.map((src) => ({
       id: `src:${src.id}`,
       label: sourcePlayerLabel(src.name, dubberName),
+      badgeText: formatQualityHeight(Math.max(src.episodeQuality ?? 0, qualityHeight(src.max_quality), qualityHeight(src.quality))) ?? undefined,
       valueText: src.availability ? sourceAvailabilityLabels[src.availability] : undefined,
       type: 'radio' as const,
       checked: String(src.id) === String(currentSourceId) || src.name === currentSourceName,

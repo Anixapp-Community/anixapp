@@ -486,6 +486,13 @@ export function createCustomSources({
     return url ? { index, name, url } : null;
   }
 
+  function maxQuality(qualities) {
+    const heights = Array.isArray(qualities)
+      ? qualities.map((item) => Number(item?.quality))
+      : Object.keys(qualities ?? {}).filter((height) => qualities[height]).map(Number);
+    return Math.max(0, ...heights.filter(Number.isFinite));
+  }
+
   async function getDubbers(release, releaseId) {
     const [official, detail, entry] = await Promise.all([
       cached(`types:${releaseId}`, () => release.getDubbers(releaseId)),
@@ -501,8 +508,13 @@ export function createCustomSources({
     const types = official?.types ?? [];
     const known = new Set(types.map((item) => translationKey(item.name, item.is_sub === true || item.isSub === true)));
     const external = new Map();
+    const catalogQualities = new Map();
+    const recordQuality = (key, height) => {
+      if (key && height > (catalogQualities.get(key) ?? 0)) catalogQualities.set(key, height);
+    };
     for (const [name, rows] of [['AnimeVost', vost], ['Studio Band', band]]) {
       const key = translationKey(name);
+      for (const row of rows ?? []) recordQuality(key, maxQuality(row.qualities));
       const positions = new Set((rows ?? []).filter((row) => Object.values(row.qualities).some(Boolean)).map((row) => row.position));
       if (!known.has(key) && positions.size) external.set(key, { name, positions });
     }
@@ -517,6 +529,7 @@ export function createCustomSources({
     for (const ep of libData.sampled ?? []) {
       for (const player of ep.players) {
         const { name, key } = animeLibTeamInfo(player);
+        recordQuality(key, maxQuality(player.video?.quality));
         if (!key || known.has(key)) continue;
         if (!external.has(key)) external.set(key, { name, positions: new Set() });
         external.get(key).positions.add(ep.position);
@@ -529,9 +542,14 @@ export function createCustomSources({
       let id = 1_000_000_000 + (hash >>> 0) % 1_000_000_000;
       while (used.has(id)) id++;
       used.add(id);
-      return { id, name: item.name, is_sub: key.startsWith('sub:'), is_external: true, episode_count: item.positions.size };
+      return { id, name: item.name, is_sub: key.startsWith('sub:'), is_external: true, episode_count: item.positions.size, max_quality: catalogQualities.get(key) };
     });
-    return additions.length ? { ...official, code: 0, types: [...types, ...additions] } : official;
+    if (!additions.length && !catalogQualities.size) return official;
+    const enriched = types.map((item) => {
+      const height = catalogQualities.get(translationKey(item.name, item.is_sub === true || item.isSub === true || item.type === 1));
+      return height ? { ...item, max_quality: Math.max(Number(item.max_quality) || 0, height) } : item;
+    });
+    return { ...official, code: 0, types: [...enriched, ...additions] };
   }
 
   async function getSources(release, releaseId, dubberId) {
@@ -793,13 +811,7 @@ export function createCustomSources({
         sources: [...(baseline?.sources ?? []), ...extra.filter(({ name }) => !existing.has(normalize(name))).map(({ id, name, episodes }) =>
           ({
             id, name, episodes_count: episodes.size,
-            max_quality: Math.max(0, ...Array.from(episodes.values(), (episode) => {
-              const qualities = episode.qualities;
-              const heights = Array.isArray(qualities)
-                ? qualities.map((item) => Number(item?.quality))
-                : Object.keys(qualities ?? {}).filter((height) => qualities[height]).map(Number);
-              return Math.max(0, ...heights.filter(Number.isFinite));
-            })) || undefined,
+            max_quality: Math.max(0, ...Array.from(episodes.values(), (episode) => maxQuality(episode.qualities))) || undefined,
           }))],
       };
     },
@@ -811,7 +823,9 @@ export function createCustomSources({
         sort === 2 ? b.position - a.position : a.position - b.position);
       return {
         code: 0,
-        episodes: episodes.map(({ position, name }) => ({ position, name, url: '', iframe: false })),
+        episodes: episodes.map(({ position, name, qualities }) => ({
+          position, name, url: '', iframe: false, max_quality: maxQuality(qualities) || undefined,
+        })),
       };
     },
 

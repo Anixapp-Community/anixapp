@@ -261,7 +261,8 @@
   type SourceStatus = NonNullable<SourceItem['availability']>;
   type EpisodeResponse = Awaited<ReturnType<NonNullable<Window['anixApi']>['release']['getEpisode']>>;
   const prefetchedEpisodes = new Map<string, { response: EpisodeResponse; expires: number }>();
-  const sourceChecks = new Map<string, { status: SourceStatus; expires: number }>();
+  const sourceChecks = new Map<string, { status: SourceStatus; quality: number; expires: number }>();
+  let sourceEpisodeQualities = $state<Record<number, number>>({});
   let sourceStatus = $state<Record<number, SourceStatus>>({});
   let sourceStatusScope = $state('');
   let sourceMenuRequest = 0;
@@ -2335,6 +2336,7 @@
 
   async function checkSource(
     rId: number, dubId: number, position: number, source: SourceItem, isCurrent: () => boolean,
+    onQuality: (height: number) => void,
   ): Promise<SourceStatus> {
     const api = window.anixApi?.release;
     if (!api?.getEpisode) return 'unknown';
@@ -2350,7 +2352,7 @@
     const episode = response?.episode;
     if (!episode?.url) return 'unavailable';
     if (!isCurrent()) return 'unknown';
-    const status = await checkEpisodeAvailability(episode);
+    const status = await checkEpisodeAvailability(episode, false, onQuality);
     if (status === 'available' || status === 'proxy' || status === 'manifest') {
       if (prefetchedEpisodes.size >= 100) prefetchedEpisodes.clear();
       prefetchedEpisodes.set(key, { response, expires: Date.now() + 60_000 });
@@ -2390,6 +2392,7 @@
     popoverLoading = true;
     sourceStatusScope = scope;
     sourceStatus = {};
+    sourceEpisodeQualities = {};
     let sources: SourceItem[];
     try {
       sources = await listPlayableDubberSources(rId, dubId);
@@ -2402,6 +2405,7 @@
     applySourceNameFromList(sources);
     sourceStatus = Object.fromEntries(sources.map(({ id }) => {
       const hit = sourceChecks.get(`${scope}:${id}`);
+      if (hit && hit.expires > Date.now()) sourceEpisodeQualities[id] = hit.quality;
       return [id, hit && hit.expires > Date.now() ? hit.status : 'checking'];
     }));
     const pending = sources.filter(({ id }) => sourceStatus[id] === 'checking');
@@ -2409,11 +2413,15 @@
     await Promise.all(Array.from({ length: Math.min(3, pending.length) }, async () => {
       while (isCurrent() && next < pending.length) {
         const source = pending[next++];
-        const status = await checkSource(rId, dubId, position, source, isCurrent).catch(() => 'unknown' as const);
+        let quality = 0;
+        const status = await checkSource(rId, dubId, position, source, isCurrent, (height) => {
+          quality = height;
+        }).catch(() => 'unknown' as const);
         if (!isCurrent()) return;
         if (sourceChecks.size >= 100) sourceChecks.clear();
-        sourceChecks.set(`${scope}:${source.id}`, { status, expires: Date.now() + 60_000 });
+        sourceChecks.set(`${scope}:${source.id}`, { status, quality, expires: Date.now() + 60_000 });
         sourceStatus[source.id] = status;
+        sourceEpisodeQualities[source.id] = quality;
       }
     }));
   }
@@ -4784,7 +4792,9 @@
     episodes,
     dubbers,
     sources: !isLocalPlaybackMode && sourceStatusScope === currentSourceScope
-      ? dubberSources.map((source) => ({ ...source, availability: sourceStatus[source.id] }))
+      ? dubberSources.map((source) => ({
+          ...source, availability: sourceStatus[source.id], episodeQuality: sourceEpisodeQualities[source.id],
+        }))
       : dubberSources,
     downloadedEpisodes,
     downloadedPositions,
