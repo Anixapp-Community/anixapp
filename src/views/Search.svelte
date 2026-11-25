@@ -8,6 +8,10 @@
   import UiV2CollectionCardSkeleton from '../components/uikit-v2/UiV2CollectionCardSkeleton.svelte';
   import UiV2ContentRetryOverlay from '../components/uikit-v2/UiV2ContentRetryOverlay.svelte';
   import UiV2Tabs from '../components/uikit-v2/UiV2Tabs.svelte';
+  import ReleaseFilterPanel from '../components/ReleaseFilterPanel.svelte';
+  import { toFilterRequest, type CustomFilterStorage } from '../utils/homeCustomTab';
+  import { loadSearchFilter, matchesSearchRelease, saveSearchFilter } from '../utils/searchFilter';
+  import FilteredReleases from './FilteredReleases.svelte';
   import DiscoverHero from '../components/DiscoverHero.svelte';
   import { replacePath } from '../stores/navigation';
   import { isMobileMode } from '../platform/mobile';
@@ -73,7 +77,13 @@
   // Вкладка меняется без перемонтирования страницы — иначе у вкладок не играет анимация
   // svelte-ignore state_referenced_locally
   let activeTab = $state<SearchTab>(tab);
-  const viewKey = () => buildViewStateKey('/search', { q: query, tab: activeTab, by: searchBy });
+
+  let appliedFilter = $state(loadSearchFilter());
+  const filterArgs = $derived(toFilterRequest(appliedFilter));
+  const filtering = $derived(Object.keys(filterArgs).length > 1 || appliedFilter.selected_sort !== 0);
+  const addedDates = new Map<number, number>();
+
+  const viewKey = () => buildViewStateKey('/search', { q: query, tab: activeTab, by: searchBy, ...(activeTab === 'releases' && filtering ? { filter: JSON.stringify(filterArgs) } : {}) });
   /** Уже загруженные вкладки этого запроса. */
   const tabCache = new Map<SearchTab, SearchViewState>();
 
@@ -161,6 +171,44 @@
       : fresh;
   }
 
+  async function filterReleaseRows(rows: Record<string, unknown>[], seq: number) {
+    const matches = rows.filter((row) => matchesSearchRelease(row, appliedFilter));
+    const types = appliedFilter.selected_types;
+    if (!types.length) return matches;
+    const result: Record<string, unknown>[] = [];
+    for (let index = 0; index < matches.length && seq === requestSeq; index += 4) {
+      const batch = await Promise.all(matches.slice(index, index + 4).map(async (row) => {
+        const data = await window.anixApi.release.getDubbers(Number(row.id));
+        return data.types?.some(({ id }) => types.includes(String(id))) ? row : null;
+      }));
+      result.push(...batch.filter((row) => row !== null));
+    }
+    return result;
+  }
+
+  function sortFilteredReleases() {
+    const sort = appliedFilter.selected_sort;
+    function score(card: ReleaseCardData) {
+      if (sort === 1 || sort === 5) return card.rating ?? 0;
+      if (sort === 2 || sort === 6) return Number(card.year) || 0;
+      if (sort === 3 || sort === 7) return card.favoritesCount ?? 0;
+      return addedDates.get(card.id ?? 0) ?? 0;
+    }
+    releases = [...releases].sort((a, b) => sort >= 4 ? score(a) - score(b) : score(b) - score(a));
+  }
+
+  function applySearchFilter(filter: CustomFilterStorage) {
+    saveSearchFilter(filter);
+    appliedFilter = filter;
+    tabCache.delete('releases');
+    requestSeq += 1;
+    isLoading = false;
+    releases = [];
+    franchise = null;
+    addedDates.clear();
+    retry();
+  }
+
   async function loadPage() {
     if (!query || isLoading || !hasMore) return;
     const seq = ++requestSeq;
@@ -176,13 +224,22 @@
       if (seq !== requestSeq) return;
 
       if (activeTab === 'releases') {
-        if (first && searchBy === 0) franchise = mapFranchise(data, content);
+        if (first && searchBy === 0 && !filtering) franchise = mapFranchise(data, content);
         const seen = new Set(releases.map((r) => r.id));
-        const next = content
-          .map((row) => mapReleaseRawToCard(row as Record<string, unknown>))
+        const raw = content as Record<string, unknown>[];
+        const rows = filtering ? await filterReleaseRows(raw, seq) : raw;
+        if (seq !== requestSeq) return;
+        const catalogRows = filtering && hits ? await filterReleaseRows(hits.map((hit) => hit.raw), seq) : null;
+        if (seq !== requestSeq) return;
+        for (const row of [...rows, ...(catalogRows ?? [])]) {
+          addedDates.set(Number(row.id), Number(row.last_update_date ?? row.creation_date ?? row.id) || 0);
+        }
+        const next = rows
+          .map((row) => mapReleaseRawToCard(row))
           .filter((r) => !seen.has(r.id));
         releases = [...releases, ...next];
-        if (hits) mergeCatalog(hits);
+        if (hits) mergeCatalog(catalogRows ? hits.filter((hit) => catalogRows.includes(hit.raw)) : hits);
+        if (filtering) sortFilteredReleases();
       } else if (activeTab === 'collections') {
         const seen = new Set(collections.map((c) => c.id));
         const next = content
@@ -200,17 +257,22 @@
       if (first) addSearchHistory(query, activeTab);
       page += 1;
       hasMore = content.length > 0;
-      loadState = itemCount > 0 || franchise ? 'ready' : 'empty';
-      requestAnimationFrame(checkIfNeedsMore);
+      const searchingMore = filtering && activeTab === 'releases' && !releases.length && hasMore;
+      loadState = searchingMore ? 'loading' : itemCount > 0 || franchise ? 'ready' : 'empty';
+      requestAnimationFrame(() => {
+        if (seq !== requestSeq) return;
+        if (searchingMore) void loadPage();
+        else checkIfNeedsMore();
+      });
     } catch (err) {
       const hits = catalog ? await catalog : [];
       if (seq !== requestSeq) return;
-      if (first && hits.length) {
+      if (first && hits.length && !(filtering && activeTab === 'releases')) {
         // Anixart недоступен — хотя бы то, что знает каталог
         releases = hits.map((h) => h.card);
         hasMore = false;
         loadState = 'ready';
-      } else if (first) {
+      } else if (first || loadState === 'loading') {
         errorMsg = headlineFromLoadError(err);
         loadState = 'error';
       } else {
@@ -275,7 +337,7 @@
     errorMsg = '';
     activeTab = next;
     resetScrollTop();
-    const cached = tabCache.get(next) ?? getViewState<SearchViewState>(viewKey())?.data;
+    const cached = next === 'releases' && filtering ? undefined : tabCache.get(next) ?? getViewState<SearchViewState>(viewKey())?.data;
     if (cached && cached.loadState === 'ready') {
       applySnapshot(cached);
       return;
@@ -374,7 +436,7 @@
     unregisterScrollKey = registerActiveScrollKey(viewKey);
     window.addEventListener('anix:beforeNavigate', onBeforeNavigate);
 
-    const cached = getViewState<SearchViewState>(viewKey());
+    const cached = activeTab === 'releases' && filtering ? undefined : getViewState<SearchViewState>(viewKey());
     if (cached?.data && cached.data.loadState === 'ready') {
       applySnapshot(cached.data);
       if (cached.scrollTop > 0) beginScrollRestore();
@@ -401,21 +463,22 @@
 
 {#snippet releaseActions()}
   <div class="search-v2__actions">
-    <button
-      type="button"
-      class="search-v2__filter"
-      aria-label="Сбросить поиск по полю"
-      onclick={() => switchSearchBy('0')}
-    >
-      по полю «{byLabel.toLowerCase()}»
-      <span aria-hidden="true">{@html iconX(12)}</span>
-    </button>
+    {#if showByFilter}
+      <button
+        type="button"
+        class="search-v2__filter"
+        aria-label="Сбросить поиск по полю"
+        onclick={() => switchSearchBy('0')}
+      >
+        по полю «{byLabel.toLowerCase()}»
+        <span aria-hidden="true">{@html iconX(12)}</span>
+      </button>
+    {/if}
   </div>
 {/snippet}
 
 <div class="view view-search-v2 discover-page" bind:this={wrapEl}>
   {#if isMobileMode()}
-    <!-- Телефон: запрос и фильтры — в верхней панели (MobileSearch), здесь только вкладки -->
     {#if query}
       <UiV2Tabs
         class="uiv2-tabs--static search-v2__tabs"
@@ -425,10 +488,10 @@
       />
       {#if showByFilter}{@render releaseActions()}{/if}
     {/if}
-  {:else}
+  {:else if query}
     <DiscoverHero
-      title={query || 'Что ищем?'}
-      subtitle={query ? 'Результаты поиска' : 'Введите запрос в строке поиска сверху'}
+      title={query}
+      subtitle="Результаты поиска"
     >
       {#if query}
         <!-- Пустой слот справа съедал бы ширину капсулы — передаём его только для тайтлов -->
@@ -439,8 +502,15 @@
           onChange={switchTab}
           rightActions={showByFilter ? releaseActions : undefined}
         />
+
       {/if}
     </DiscoverHero>
+  {/if}
+
+  {#if query && activeTab === 'releases'}
+    <div class="search-filter-spacing">
+      <ReleaseFilterPanel title="Фильтры" presentation="inline" gridLayout initial={appliedFilter} onApply={applySearchFilter} />
+    </div>
   {/if}
 
   {#if query}
@@ -450,7 +520,7 @@
       {#if peekTabs.next}<TabPeek dir={1}>{@render searchPeek(peekTabs.next as SearchTab)}</TabPeek>{/if}
     </div>
   {:else}
-    {@render searchResults()}
+    <FilteredReleases embedded />
   {/if}
 </div>
 
@@ -550,3 +620,9 @@
     </div>
   {/if}
 {/snippet}
+
+<style>
+  .search-filter-spacing { margin-block-end: 1.25rem; }
+  :global(html.mobile-mode) .search-filter-spacing { padding-inline: var(--m-gutter); }
+  .view-search-v2 :global(.search-v2__franchise + .release-cards-grid-root) { margin-block-start: 0.85rem; }
+</style>

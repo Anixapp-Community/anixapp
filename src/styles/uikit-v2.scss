@@ -3642,6 +3642,18 @@
   color: var(--uikit-v2-text);
 }
 
+.uiv2-select__panel--filter {
+  border: 1px solid var(--uiv2-border, var(--uiv2-hover-bg));
+  border-radius: 12px;
+  background: var(--m-surface-sheet, var(--uikit-v2-elevated));
+
+  .uiv2-select__option-label,
+  .uiv2-select__option-desc {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
 .uiv2-select__scroll {
   position: relative;
   flex: 1 1 auto;
@@ -5033,7 +5045,8 @@
 // ——— Меню шторкой снизу (UiV2PopupMenu: телефон, планшет и prop sheet на ПК) ———
 // Уровни подменю листаются внутри шторки, её высота плавно следует за содержимым.
 // Порталится в body; под mobile-mode цвета берутся из мобильных токенов, на ПК — из uikit.
-.uiv2-menu-sheet {
+.uiv2-menu-sheet,
+.release-filter--embedded {
   --sheet-bg: var(--m-surface-sheet, var(--uikit-v2-elevated));
   --sheet-text: var(--m-text, var(--uikit-v2-text));
   --sheet-muted: var(--m-text-2, var(--uiv2-fg-muted));
@@ -5042,6 +5055,9 @@
   --sheet-selected-bg: var(--m-secondary-container, var(--uiv2-selected-bg));
   --sheet-selected-fg: var(--m-on-secondary-container, var(--uikit-v2-text));
   --sheet-font: var(--m-font, inherit);
+}
+
+.uiv2-menu-sheet {
   position: fixed;
   inset: 0;
   z-index: 12040;
@@ -13601,14 +13617,6 @@ $uiv2-comment-thread: color-mix(in srgb, var(--uikit-v2-text) 16%, transparent);
 .release-filter .uiv2-popup-menu__item {
   min-height: 48px;
   padding-block: 4px;
-}
-
-.release-filter__row .uiv2-popup-menu__value {
-  max-width: 55%;
-}
-
-.release-filter__row--set .uiv2-popup-menu__value {
-  color: var(--sheet-text);
 }
 
 .release-filter__group {

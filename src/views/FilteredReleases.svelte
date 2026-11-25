@@ -5,18 +5,18 @@
   import ReleaseCardsGrid from '../components/ReleaseCardsGrid.svelte';
   import ReleaseCardsGridSkeleton from '../components/ReleaseCardsGridSkeleton.svelte';
   import ReleaseFilterPanel from '../components/ReleaseFilterPanel.svelte';
-  import UiV2Button from '../components/uikit-v2/UiV2Button.svelte';
   import UiV2ContentRetryOverlay from '../components/uikit-v2/UiV2ContentRetryOverlay.svelte';
-  import { iconFilm, iconSlidersHorizontal } from '../components/icons';
+  import { iconFilm } from '../components/icons';
   import type { ReleaseCardData } from '../types/release';
   import { headlineFromLoadError } from '../utils/content-load-error';
   import { toFilterRequest, type CustomFilterStorage } from '../utils/homeCustomTab';
   import { toIpcArgs } from '../utils/ipc-args';
   import { mapReleaseRawToCard } from '../utils/release-card';
-  import { describeFilter, loadSearchFilter, saveSearchFilter } from '../utils/searchFilter';
+  import { describeFilter, FILTER_SEARCH_EVENT, loadSearchFilter, saveSearchFilter } from '../utils/searchFilter';
 
   let filter = $state<CustomFilterStorage>(loadSearchFilter());
-  let panelOpen = $state(false);
+  let { embedded = false }: { embedded?: boolean } = $props();
+  let filterRevision = $state(0);
   let items = $state<ReleaseCardData[]>([]);
   let page = 0;
   let hasMore = true;
@@ -75,16 +75,22 @@
   }
 
   function applyFilter(next: CustomFilterStorage) {
-    saveSearchFilter(next);
     filter = next;
-    panelOpen = false;
+    saveSearchFilter(filter);
     restart();
   }
 
   onMount(() => {
     scrollEl = wrapEl?.closest<HTMLElement>('.page__scroll') ?? document.getElementById('content');
     scrollEl?.addEventListener('scroll', checkIfNeedsMore, { passive: true });
+    const refreshFilter = () => {
+      filter = loadSearchFilter();
+      filterRevision += 1;
+      restart();
+    };
+    window.addEventListener(FILTER_SEARCH_EVENT, refreshFilter);
     void loadPage();
+    return () => window.removeEventListener(FILTER_SEARCH_EVENT, refreshFilter);
   });
 
   onDestroy(() => {
@@ -93,40 +99,61 @@
   });
 </script>
 
-{#snippet editButton()}
-  <UiV2Button label="Изменить" size="sm" variant="chrome" onclick={() => { panelOpen = true; }}>
-    {#snippet icon()}{@html iconSlidersHorizontal(16)}{/snippet}
-  </UiV2Button>
-{/snippet}
-
-<div class="view view-filtered discover-page" bind:this={wrapEl}>
-  <DiscoverHero title="Результаты фильтра" subtitle={summary || 'Все релизы'} actions={editButton} />
-
-  {#if loadState === 'loading'}
-    <div class="bookmarks__grid"><ReleaseCardsGridSkeleton /></div>
-  {:else if loadState === 'error'}
-    <UiV2ContentRetryOverlay message={errorMsg} onRetry={restart} />
-  {:else if loadState === 'empty'}
-    <div class="discover-empty">
-      <span class="discover-empty__icon" aria-hidden="true">{@html iconFilm(26)}</span>
-      <p class="discover-empty__title">Ничего не найдено</p>
-      <p class="discover-empty__text">Попробуйте убрать часть условий</p>
-      <UiV2Button label="Изменить фильтр" size="sm" onclick={() => { panelOpen = true; }} />
-    </div>
-  {:else}
-    <div class="bookmarks__grid"><ReleaseCardsGrid {items} /></div>
-    {#if isLoading}
-      <div class="bookmarks__grid"><ReleaseCardsGridSkeleton count={4} /></div>
-    {/if}
+<div class="filtered-catalog" class:discover-page={!embedded} class:view={!embedded} bind:this={wrapEl}>
+  {#if !embedded}
+    <DiscoverHero title="Результаты фильтра" subtitle={summary || 'Все релизы'} />
   {/if}
+
+  <div class="filtered-catalog__layout">
+    <aside class="filtered-catalog__filters" aria-label="Фильтры каталога">
+      {#key filterRevision}
+        <ReleaseFilterPanel title="Фильтры" presentation="inline" gridLayout initial={filter} onApply={applyFilter} />
+      {/key}
+    </aside>
+
+    <section class="filtered-catalog__results" aria-labelledby="filtered-catalog-heading">
+      <h2 id="filtered-catalog-heading">Поиск</h2>
+
+      {#if loadState === 'loading'}
+        <div class="bookmarks__grid"><ReleaseCardsGridSkeleton /></div>
+      {:else if loadState === 'error'}
+        <UiV2ContentRetryOverlay message={errorMsg} onRetry={restart} />
+      {:else if loadState === 'empty'}
+        <div class="discover-empty">
+          <span class="discover-empty__icon" aria-hidden="true">{@html iconFilm(26)}</span>
+          <p class="discover-empty__title">Ничего не найдено</p>
+          <p class="discover-empty__text">Попробуйте убрать часть условий</p>
+        </div>
+      {:else}
+        <div class="bookmarks__grid"><ReleaseCardsGrid {items} /></div>
+        {#if isLoading}
+          <div class="bookmarks__grid"><ReleaseCardsGridSkeleton count={4} /></div>
+        {/if}
+      {/if}
+    </section>
+  </div>
 </div>
 
-{#if panelOpen}
-  <ReleaseFilterPanel
-    title="Фильтр"
-    initial={filter}
-    applyLabel="Показать"
-    onApply={applyFilter}
-    onClose={() => { panelOpen = false; }}
-  />
-{/if}
+<style>
+  .filtered-catalog__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(0.75rem, 2vw, 1.5rem);
+    align-items: start;
+  }
+  :global(html.mobile-mode) .filtered-catalog:not(.view) .filtered-catalog__filters {
+    padding-inline: var(--m-gutter);
+  }
+
+  .filtered-catalog__results {
+    min-width: 0;
+  }
+  :global(html.mobile-mode) .filtered-catalog:not(.view) .filtered-catalog__results > h2 {
+    margin-inline: var(--m-gutter);
+  }
+  .filtered-catalog__results > h2 {
+    margin: 0 0 0.6rem;
+    font-size: 1rem;
+    font-weight: 650;
+  }
+</style>

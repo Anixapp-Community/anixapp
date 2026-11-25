@@ -1,12 +1,7 @@
 <script lang="ts">
-  /**
-   * Экран поиска в мобильном режиме: поле ввода в верхней панели, история запросов (пока запроса нет
-   * или поле в фокусе) и панель фильтра. Результаты показывает обычная страница /search.
-   */
-  import { iconClock, iconSlidersHorizontal, iconX } from '../components/icons';
-  import ReleaseFilterPanel from '../components/ReleaseFilterPanel.svelte';
-  import { loadSearchFilter, saveSearchFilter } from '../utils/searchFilter';
-  import { buildSearchRoute, SEARCH_PLACEHOLDERS, type SearchTab } from '../search-controller';
+  // Мобильная строка поиска и история запросов. Фильтры находятся на странице поиска.
+  import { iconClock, iconX } from '../components/icons';
+  import { buildSearchRoute, openSearchPage, SEARCH_PLACEHOLDERS, type SearchTab } from '../search-controller';
   import { navigate } from '../stores/navigation';
   import { addSearchHistory, clearSearchHistory, getSearchHistory, type SearchHistoryScope } from '../utils/search-history';
 
@@ -25,11 +20,10 @@
 
   let query = $derived(value);
   let focused = $state(false);
-  let filterPanelOpen = $state(false);
   let recent = $state<string[]>([]);
   let inputEl = $state<HTMLInputElement | null>(null);
 
-  const showHistory = $derived(!value || focused);
+  const showHistory = $derived(local ? !value || focused : focused && query.trim() !== value.trim() && history.length > 0);
   const history = $derived.by(() => {
     const needle = query.trim().toLocaleLowerCase('ru-RU');
     return recent.filter((item) => item.toLocaleLowerCase('ru-RU').includes(needle));
@@ -39,9 +33,8 @@
     recent = getSearchHistory(historyScope);
   });
 
-  // Пустой экран поиска сразу готов к вводу
   $effect(() => {
-    if (!value) inputEl?.focus();
+    if (local && !value) inputEl?.focus();
   });
 
   function onFocus() {
@@ -51,9 +44,13 @@
 
   function submit(text: string) {
     const q = text.trim();
-    if (!q) return;
+    if (!q && local) return;
     query = q;
     inputEl?.blur();
+    if (!q) {
+      openSearchPage(q);
+      return;
+    }
     addSearchHistory(q, historyScope);
     if (q === value) return;
     if (local) {
@@ -94,11 +91,6 @@
       {@html iconX(24)}
     </button>
   {/if}
-  {#if !local}
-    <button type="button" class="m-icon-btn" aria-label="Поиск по фильтру" onclick={() => { filterPanelOpen = true; }}>
-      {@html iconSlidersHorizontal(24)}
-    </button>
-  {/if}
 </form>
 
 {#if showHistory}
@@ -119,20 +111,6 @@
       <p class="m-search-history__empty">Здесь появятся ваши запросы</p>
     {/if}
   </div>
-{/if}
-
-{#if filterPanelOpen}
-  <ReleaseFilterPanel
-    title="Фильтр"
-    initial={loadSearchFilter()}
-    applyLabel="Показать"
-    onApply={(filter) => {
-      saveSearchFilter(filter);
-      filterPanelOpen = false;
-      navigate('/filtered');
-    }}
-    onClose={() => { filterPanelOpen = false; }}
-  />
 {/if}
 
 <style lang="scss">

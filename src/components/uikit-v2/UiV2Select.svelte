@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import { scale, slide } from 'svelte/transition';
   import { cubicIn, cubicOut, quintOut } from 'svelte/easing';
+  import { revealFilterList } from '../../utils/revealFilterList';
   import { portal } from '../../actions/portal';
   import { uiv2CustomScroll } from '../../actions/uiv2CustomScroll';
   import { iconArrowUpDown, iconCheck, iconChevronDown } from '../icons';
@@ -39,6 +40,8 @@
     compact?: boolean;
     /** Крупный заголовок без рамки (сортировка ленты как на Android). */
     appearance?: 'default' | 'title' | 'row';
+    listPlacement?: 'inline' | 'overlay';
+    showSelectedDetails?: boolean;
     /** Доступное имя, если нет видимого label */
     ariaLabel?: string;
     onChange?: (value: string) => void;
@@ -56,12 +59,15 @@
     panelClass = '',
     compact = false,
     appearance = 'default',
+    listPlacement,
+    showSelectedDetails = true,
     ariaLabel,
     onChange,
   }: Props = $props();
 
   const isTitle = $derived(appearance === 'title');
   const isRow = $derived(appearance === 'row' && !compact);
+  const isInline = $derived(listPlacement ? listPlacement === 'inline' : isRow);
 
   const GAP = 8;
   const EDGE = 10;
@@ -74,6 +80,7 @@
   let panelWidth = $state(0);
   let panelMaxHeight = $state(264);
   let openDown = $state(true);
+  let overlayFromRight = $state(false);
   let originY = $state('0%');
 
   const selected = $derived(options.find((o) => o.value === value) ?? null);
@@ -82,6 +89,11 @@
   const compactTitle = $derived(
     selected?.desc ? `${selected.label} · ${selected.desc}` : (selected?.label ?? placeholder),
   );
+
+  function animateOverlayList(node: HTMLElement, { closing = false } = {}) {
+    if (listPlacement === 'overlay') return revealFilterList(node, { upward: !openDown, fromRight: overlayFromRight, closing });
+    return scale(node, { duration: 200, start: 0.97, easing: cubicOut });
+  }
 
   function animateInlineList(node: HTMLElement, { closing = false } = {}) {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -105,11 +117,28 @@
     return r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
   }
 
+  function positionOverlay(rect: DOMRect) {
+    const below = window.innerHeight - rect.bottom - GAP - EDGE;
+    const above = rect.top - GAP - EDGE;
+    openDown = below >= above;
+    originY = openDown ? '0%' : '100%';
+    panelMaxHeight = Math.max(0, openDown ? below : above);
+    panelWidth = Math.min(window.innerWidth - EDGE * 2, Math.max(rect.width, 240));
+    overlayFromRight = rect.left > window.innerWidth - rect.right;
+    const left = overlayFromRight ? rect.right - panelWidth : rect.left;
+    panelLeft = Math.max(EDGE, Math.min(left, window.innerWidth - EDGE - panelWidth));
+    panelTop = openDown ? rect.bottom + GAP : window.innerHeight - rect.top + GAP;
+  }
+
   async function updatePanelPosition() {
     if (!triggerEl || !panelEl) return;
     await tick();
 
     const rect = triggerEl.getBoundingClientRect();
+    if (listPlacement === 'overlay') {
+      positionOverlay(rect);
+      return;
+    }
     panelWidth = compact || isTitle ? 0 : rect.width;
 
     const spaceBelow = window.innerHeight - rect.bottom - GAP;
@@ -145,8 +174,9 @@
 
   async function openPanel() {
     if (disabled || open) return;
+    if (listPlacement === 'overlay' && triggerEl) positionOverlay(triggerEl.getBoundingClientRect());
     open = true;
-    if (isRow) return;
+    if (isInline) return;
     await tick();
     await updatePanelPosition();
     requestAnimationFrame(() => updatePanelPosition());
@@ -202,7 +232,7 @@
 
   $effect(() => {
     if (!open) return;
-    const floating = !isRow;
+    const floating = !isInline;
     document.addEventListener('click', onDocumentClick, true);
     document.addEventListener('keydown', onDocumentKeydown, true);
     if (floating) {
@@ -294,7 +324,7 @@
       id="{id}-trigger"
       type="button"
       class="uiv2-select__trigger"
-      class:uiv2-select__trigger--with-desc={!!selected?.desc && !compact}
+      class:uiv2-select__trigger--with-desc={showSelectedDetails && !!selected?.desc && !compact}
       class:uiv2-select__trigger--compact={compact}
       aria-haspopup="listbox"
       aria-expanded={open}
@@ -321,7 +351,7 @@
         <span class="uiv2-select__value">
           {#if selected}
             <span class="uiv2-select__value-main">
-              {#if selected.status || selected.icon}
+              {#if showSelectedDetails && (selected.status || selected.icon)}
                 <span class="uiv2-select__value-leading">
                   {#if selected.status}
                     <span class="uiv2-status-dot uiv2-status-dot--{selected.status}" aria-hidden="true"></span>
@@ -336,7 +366,7 @@
                 <span class="uiv2-select__value-hint">{selected.hint}</span>
               {/if}
             </span>
-            {#if selected.desc}
+            {#if showSelectedDetails && selected.desc}
               <span class="uiv2-select__value-desc">{selected.desc}</span>
             {/if}
           {:else}
@@ -349,7 +379,7 @@
       {/if}
     </button>
   </div>
-  {#if open && isRow}
+  {#if open && isInline}
     <div
       class="uiv2-select__inline"
       in:animateInlineList
@@ -371,9 +401,10 @@
   {/if}
 </div>
 
-{#if open && !isRow}
+{#if open && !isInline}
   <div
     class="uiv2-select__overlay"
+    style:pointer-events={listPlacement === 'overlay' ? 'none' : undefined}
     data-uiv2-select-portal
     use:portal
     role="presentation"
@@ -384,18 +415,22 @@
       id={listboxId}
       class="uiv2-select__panel {panelClass}"
       class:uiv2-select__panel--up={!openDown}
+      class:uiv2-select__panel--filter={listPlacement === 'overlay'}
       class:uiv2-select__panel--with-leading={showLeading}
       class:uiv2-select__panel--title={isTitle}
       role="listbox"
       tabindex="-1"
       aria-labelledby="{id}-trigger"
       style:left="{panelLeft}px"
-      style:top="{panelTop}px"
+      style:top={listPlacement === 'overlay' && !openDown ? undefined : `${panelTop}px`}
+      style:bottom={listPlacement === 'overlay' && !openDown ? `${panelTop}px` : undefined}
       style:width={compact || isTitle ? undefined : `${panelWidth}px`}
       style:min-width={compact ? '15rem' : isTitle ? '13rem' : undefined}
       style:max-height="{panelMaxHeight}px"
       style:transform-origin="50% {originY}"
-      transition:scale={{ duration: 200, start: 0.97, easing: cubicOut }}
+      in:animateOverlayList
+      out:animateOverlayList={{ closing: true }}
+      inert={!open}
       onpointerdown={(e) => e.stopPropagation()}
     >
       {@render optionList()}

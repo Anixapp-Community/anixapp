@@ -47,9 +47,8 @@ export function buildSearchRoute(
 /** Открыть страницу результатов. */
 export function openSearchPage(query: string, tab: SearchTab = 'releases', searchBy = 0): void {
   const q = query.trim();
-  if (!q) return;
-  addSearchHistory(q, tab);
-  const route = buildSearchRoute(q, tab, searchBy);
+  if (q) addSearchHistory(q, tab);
+  const route = q ? buildSearchRoute(q, tab, searchBy) : '/search';
   // Тот же запрос — уже на странице (navigate прислал бы маршрут без query)
   if (isCurrentAppRoute(route)) return;
   navigate(route);
