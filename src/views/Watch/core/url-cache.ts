@@ -8,7 +8,7 @@ const cache = new Map<string, { result: ResolvedEpisodeMedia; expires: number }>
 const inflight = new Map<string, Promise<ResolvedEpisodeMedia>>();
 
 function cacheKey(embedUrl: string, iframe: boolean, sourceWebPlayer: boolean): string {
-  const raw = embedUrl.startsWith('http') ? embedUrl : `https:${embedUrl}`;
+  const raw = embedUrl.startsWith('//') ? `https:${embedUrl}` : embedUrl;
   return `${raw}|iframe:${iframe ? 1 : 0}|sourceWeb:${sourceWebPlayer ? 1 : 0}`;
 }
 

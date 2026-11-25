@@ -119,7 +119,7 @@ export function toCorsSafePlayUrl(url: string, referer?: string): string {
   if (url.startsWith('/') || url.startsWith('anix-local:') || url.includes('/__anix/media') || url.includes('/tv/media')) return url;
   if (isUnplayableVideoSrc(url)) return url;
   try {
-    const parsed = new URL(url.startsWith('http') ? url : `https:${url}`);
+    const parsed = new URL(url.startsWith('//') ? `https:${url}` : url);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return url;
     if (!hostNeedsMediaProxy(parsed.hostname)) return url;
     const ref = /(^|\.)okcdn\.ru$/i.test(parsed.hostname) && referer === url
@@ -205,7 +205,7 @@ export async function resolveEpisodeUrl(
   if (episodeUrl.startsWith('anix-stream:')) {
     return { playUrl: episodeUrl, useVideo: true, qualityMap: {}, currentQuality: '', skip: null };
   }
-  const sourceUrl = episodeUrl.startsWith('http') ? episodeUrl : `https:${episodeUrl}`;
+  const sourceUrl = episodeUrl.startsWith('//') ? `https:${episodeUrl}` : episodeUrl;
   if (forceSourceIframe) {
     return {
       playUrl: sourceUrl,
@@ -257,7 +257,7 @@ export async function resolveEpisodeUrl(
 
       if (directUrl && !isUnplayableVideoSrc(directUrl)) {
         const toPlayable = (u: string) => {
-          const abs = u.startsWith('http') ? u : `https:${u}`;
+          const abs = u.startsWith('//') ? `https:${u}` : u;
           if (/:hls:/i.test(abs)) return abs;
           try {
             const parsed = new URL(abs);
@@ -269,13 +269,13 @@ export async function resolveEpisodeUrl(
           } catch { /* keep */ }
           return abs;
         };
-        const raw = directUrl.startsWith('http') ? directUrl : `https:${directUrl}`;
+        const raw = directUrl.startsWith('//') ? `https:${directUrl}` : directUrl;
 
         if (Object.keys(remoteMap).length > 0) {
           for (const [k, v] of Object.entries(remoteMap)) {
             const rawEntry = typeof v === 'string' ? v : String(v ?? '');
             if (!rawEntry || isUnplayableVideoSrc(rawEntry)) continue;
-            const abs = rawEntry.startsWith('http') ? rawEntry : `https:${rawEntry}`;
+            const abs = rawEntry.startsWith('//') ? `https:${rawEntry}` : rawEntry;
             qualityMap[k.replace(/p$/, '')] = toPlayable(abs);
           }
           const preferred = String(res?.quality ?? '').replace(/p$/i, '');
@@ -330,7 +330,7 @@ export async function resolveEpisodeUrlWithRetry(
   iframe: boolean,
   maxAttempts = 4,
 ): Promise<Awaited<ReturnType<typeof resolveEpisodeUrl>>> {
-  const abs = episodeUrl.startsWith('http') ? episodeUrl : `https:${episodeUrl}`;
+  const abs = episodeUrl.startsWith('//') ? `https:${episodeUrl}` : episodeUrl;
   const iframeOnly = /youtube\.com|youtu\.be/i.test(abs);
   const sourceWebPlayer = typeof window !== 'undefined' && /[?&]webplayer=1/.test(window.location.search);
   const retryableSocial = /vk\.com|vkvideo|rutube\.ru|ok\.ru|studiomir|mail\.ru|myvi\.|secvideo1|csst\.online|sstrge|sovetromantica/i.test(abs);
@@ -378,7 +378,7 @@ export async function resolveDownloadUrl(
   episodeUrl: string,
   iframe: boolean,
 ): Promise<{ url: string; headers: Record<string, string>; skip: SkipMarks | null } | null> {
-  const embedUrl = episodeUrl.startsWith('http') ? episodeUrl : `https:${episodeUrl}`;
+  const embedUrl = episodeUrl.startsWith('//') ? `https:${episodeUrl}` : episodeUrl;
   const isLibriaEmbed = isLibriaHtmlEmbed(embedUrl)
     || /aniliberty|anilibria|libria\.fun/i.test(embedUrl);
 
@@ -392,7 +392,7 @@ export async function resolveDownloadUrl(
       const stripped = direct.directUrl
         .replace(/:hls:manifest\.m3u8$/, '')
         .replace(/:hls:hls\.m3u8$/, '');
-      url = stripped.startsWith('http') ? stripped : `https:${stripped}`;
+      url = stripped.startsWith('//') ? `https:${stripped}` : stripped;
       headers = (direct.downloadHeaders as Record<string, string>) ?? {};
       skip = normalizeSkipMarks(direct?.skip);
     }

@@ -186,6 +186,16 @@ describe('AnimeLib custom source integration', () => {
       '360': 'anix-stream://video1.cdnlibs.org/.%D0%B0s/uploads/ep1_360.mp4',
       '1080': 'anix-stream://video1.cdnlibs.org/.%D0%B0s/uploads/ep1_1080.mp4',
     });
+
+    const proxy = 'https://api.anixapp.com/tv/media';
+    const withUnavailableQuality = createCustomSources({
+      fetcher,
+      resolveAnimeLibStream: async (url) => url.endsWith('_1080.mp4') ? null : proxy,
+    });
+    const fallback = await withUnavailableQuality.getEpisode(releaseEndpoints, 19000, animeLibSource.id, 1);
+    assert.equal(fallback.episode.url, proxy);
+    assert.equal(fallback.episode.currentQuality, '360');
+    assert.deepEqual(fallback.episode.qualityMap, { '360': proxy });
   });
 
   it('resolves YummyAnime CVH with Chrome User-Agent and prefers HLS', async () => {

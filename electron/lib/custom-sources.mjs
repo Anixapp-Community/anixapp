@@ -70,7 +70,7 @@ export function createCustomSources({
   fetcher = globalThis.fetch, fetchMedia = fetcher, aniTypeToken = '',
   aniLibToken = '', animeLibVideoBaseUrl = DEFAULT_ANIMELIB_VIDEO_BASE,
   animeLibVideoPathPrefix = DEFAULT_ANIMELIB_VIDEO_PREFIX,
-  resolveAlloha, prepareStream = (url) => url,
+  resolveAlloha, resolveAnimeLibStream, prepareStream = (url) => url,
 } = {}) {
   const cache = new Map();
   const videoBase = String(animeLibVideoBaseUrl || DEFAULT_ANIMELIB_VIDEO_BASE).replace(/\/+$/, '');
@@ -572,14 +572,16 @@ export function createCustomSources({
             (!episode.dub || animeLibTeamInfo(player).key === episode.dub));
           rawQualities = matched?.video?.quality ?? [];
         }
-        const qualityMap = {};
-        for (const item of Array.isArray(rawQualities) ? rawQualities : []) {
+        const entries = await Promise.all((rawQualities ?? []).map(async (item) => {
           const height = Number(item?.quality);
           const candidate = buildAnimeLibVideoUrl(item?.href);
-          if (!Number.isInteger(height) || height <= 0 || !candidate) continue;
-          const stream = prepareStream(candidate);
-          if (stream) qualityMap[height] = stream;
-        }
+          if (!Number.isInteger(height) || height <= 0 || !candidate) return null;
+          const stream = resolveAnimeLibStream
+            ? await resolveAnimeLibStream(candidate)
+            : prepareStream(candidate);
+          return stream ? [height, stream] : null;
+        }));
+        const qualityMap = Object.fromEntries(entries.filter(Boolean));
         const currentQuality = Object.keys(qualityMap).at(-1);
         if (!currentQuality) return null;
         return {

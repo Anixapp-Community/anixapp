@@ -52,7 +52,7 @@ export class PlayerCore {
   private mediaAbort: AbortController | null = null;
 
   setOrigEpisodeUrl(rawUrl: string): void {
-    const abs = rawUrl.startsWith('http') ? rawUrl : `https:${rawUrl}`;
+    const abs = rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl;
     this.origEpUrl = abs;
   }
 

@@ -14,6 +14,7 @@ export function createCustomSources(options?: {
   animeLibVideoBaseUrl?: string;
   animeLibVideoPathPrefix?: string;
   resolveAlloha?: (url: string) => Promise<string | null>;
+  resolveAnimeLibStream?: (url: string) => Promise<string | null>;
   prepareStream?: (url: string) => string | null;
 }): {
   getDubbers(release: ReleaseEndpoints, releaseId: number): Promise<unknown>;
