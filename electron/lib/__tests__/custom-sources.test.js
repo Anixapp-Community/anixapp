@@ -450,4 +450,271 @@ describe('AnimeLib custom source integration', () => {
     assert.equal(out.get('accept-ranges'), 'bytes');
     assert.match(out.get('access-control-expose-headers') || '', /Content-Length/);
   });
+
+  it('extracts native AnimeLib timecodes and YummyAnime skips when present', async () => {
+    const { createCustomSources } = await import('../custom-sources.mjs');
+    const releaseEndpoints = {
+      async info(id) {
+        return { release: { id, title_original: 'Skip Show', title_ru: 'Таймскип шоу', shikimori_id: 52991 } };
+      },
+      async getDubbers() { return { code: 0, types: [{ id: 10, name: 'AniLiberty' }] }; },
+      async getDubberSources() { return { code: 0, sources: [] }; },
+      async getEpisodes() { return { code: 0, episodes: [] }; },
+      async getEpisode() { return { code: 0, episode: null }; },
+    };
+
+    const fetcher = async (input) => {
+      const url = new URL(typeof input === 'string' ? input : input.toString());
+      if (url.hostname === 'api.cdnlibs.org' && url.pathname === '/api/anime') {
+        return jsonResponse({ data: [{ id: 88, name: 'Skip Show', rus_name: 'Таймскип шоу' }] });
+      }
+      if (url.hostname === 'api.cdnlibs.org' && url.pathname === '/api/episodes') {
+        return jsonResponse({ data: [{ id: 901, anime_id: 88, number: '1' }, { id: 902, anime_id: 88, number: '2' }] });
+      }
+      if (url.hostname === 'api.cdnlibs.org' && url.pathname === '/api/episodes/901') {
+        return jsonResponse({
+          data: {
+            id: 901,
+            players: [{
+              player: 'Animelib',
+              team: { id: 1, name: 'AniLiberty' },
+              timecode: [{ type: 'op', from: 90, to: 180 }, { type: 'ed', from: 1320, to: 1410 }],
+              video: { quality: [{ href: '/uploads/ep1_1080.mp4', quality: 1080 }] },
+            }],
+          },
+        });
+      }
+      if (url.hostname === 'api.cdnlibs.org' && url.pathname === '/api/episodes/902') {
+        return jsonResponse({
+          data: {
+            id: 902,
+            players: [{
+              player: 'Animelib',
+              team: { id: 1, name: 'AniLiberty' },
+              timecode: [],
+              video: { quality: [{ href: '/uploads/ep2_1080.mp4', quality: 1080 }] },
+            }],
+          },
+        });
+      }
+      if (url.hostname === 'api.yani.tv' && url.pathname === '/search') {
+        return jsonResponse({ response: [{ anime_id: 777, remote_ids: { shikimori_id: 52991 } }] });
+      }
+      if (url.hostname === 'api.yani.tv' && url.pathname === '/anime/777/videos') {
+        return jsonResponse({
+          response: [{
+            number: 1,
+            iframe_url: 'https://player.aksor.tv/video/abcdef123456',
+            data: { dubbing: 'Озвучка AniLiberty', player: 'Плеер Aksor' },
+            skips: { opening: { start: 10, end: 100 }, ending: { start: 1300, end: 1390 } },
+          }],
+        });
+      }
+      if (url.hostname === 'player.aksor.tv') {
+        return jsonResponse({ qualities: { q1080: 'https://cdn.tut-video.net/v/ep1.mpd' } });
+      }
+      return jsonResponse({}, 404);
+    };
+
+    const custom = createCustomSources({ fetcher });
+    const srcs = await custom.getDubberSources(releaseEndpoints, 40000, 10);
+    const lib = srcs.sources.find((s) => s.name === 'AnimeLib');
+    const aksor = srcs.sources.find((s) => s.name === 'Aksor (YummyAnime)');
+    assert.ok(lib && aksor);
+
+    // 1. AnimeLib native timecodes
+    const libEp1 = await custom.getEpisode(releaseEndpoints, 40000, lib.id, 1);
+    assert.deepEqual(libEp1.episode.skip, { opening: { start: 90, end: 180 }, ending: { start: 1320, end: 1410 } });
+
+    // 2. AnimeLib without native timecodes -> skip stays undefined
+    const libEp2 = await custom.getEpisode(releaseEndpoints, 40000, lib.id, 2);
+    assert.equal(libEp2.episode.skip, undefined);
+
+    // 3. YummyAnime native skips
+    const aksorEp1 = await custom.getEpisode(releaseEndpoints, 40000, aksor.id, 1);
+    assert.deepEqual(aksorEp1.episode.skip, { opening: { start: 10, end: 100 }, ending: { start: 1300, end: 1390 } });
+  });
+});
+
+describe('DreamCast custom source integration', () => {
+  it('supports play.dreamerscast.com in sourceStreamUrl', () => {
+    assert.equal(
+      sourceStreamUrl('https://play.dreamerscast.com/hls/test/master.m3u8'),
+      'anix-stream://play.dreamerscast.com/hls/test/master.m3u8',
+    );
+  });
+
+  it('discovers DreamCast dubber, decodes PlayerJS playlist, and resolves HLS stream', async () => {
+    const { createCustomSources } = await import('../custom-sources.mjs');
+    const releaseEndpoints = {
+      async info() {
+        return {
+          release: {
+            id: 60001,
+            title_original: 'Sousou no Frieren 2nd Season',
+            title_ru: 'Провожающая в последний путь Фрирен 2',
+            year: 2026,
+            shikimori_id: 59978,
+          },
+        };
+      },
+      async getDubbers() {
+        return { code: 0, types: [{ id: 10, name: 'AniLiberty' }] };
+      },
+      async getDubberSources() {
+        return { code: 0, sources: [] };
+      },
+    };
+
+    const playlistJson = JSON.stringify({
+      file: [
+        {
+          title: 'Серия 1',
+          file: 'https://play.dreamerscast.com/dash/ep1/manifest.mpd or https://play.dreamerscast.com/hls/ep1/master.m3u8',
+        },
+        {
+          title: 'Серия 2',
+          file: 'https://play.dreamerscast.com/hls/ep2/master.m3u8',
+        },
+      ],
+    });
+    const marker = '//' + Buffer.from(encodeURIComponent('KEY0')).toString('base64');
+    const b64Payload = Buffer.from(encodeURIComponent(playlistJson)).toString('base64');
+    const encodedPlaylist = '#2' + b64Payload.slice(0, 8) + marker + b64Payload.slice(8);
+    const vJson = JSON.stringify({ bk0: 'KEY0' });
+    const saltAbc = 'ABCDEFGHIJKLMabcdefghijklmNOPQRSTUVWXYZnopqrstuvwxyz0123456789+/=';
+    const stdAbc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    const stdB64 = Buffer.from(vJson, 'utf8').toString('base64');
+    const rawU = '#0' + [...stdB64].map((c) => saltAbc[stdAbc.indexOf(c)]).join('');
+    const packedJs = String.raw`eval(function(p,a,c,k,e,d){return p}('0:\'${rawU}\\';',1,1,'u|'.split('|'),0,{}))`;
+
+    const fetcher = async (input) => {
+      const url = new URL(typeof input === 'string' ? input : input.toString());
+      if (url.hostname === 'dreamerscast.com' && url.pathname === '/') {
+        return jsonResponse({
+          releases: [
+            {
+              id: 524,
+              russian: 'Провожающая в последний путь Фрирен 2',
+              original: 'Sousou no Frieren 2nd Season',
+              dateissue: 2026,
+              url: '/home/release/524-sousou-no-frieren-2',
+            },
+          ],
+        });
+      }
+      if (url.hostname === 'dreamerscast.com' && url.pathname === '/home/release/524-sousou-no-frieren-2') {
+        return new Response(
+          `<script src="/js/playerjs.min.js?v=test1"></script><script>new Playerjs("${encodedPlaylist}");</script>`,
+          { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } },
+        );
+      }
+      if (url.hostname === 'dreamerscast.com' && url.pathname === '/js/playerjs.min.js') {
+        return new Response(packedJs, { status: 200, headers: { 'content-type': 'application/javascript' } });
+      }
+      return jsonResponse({}, 404);
+    };
+
+    const custom = createCustomSources({ fetcher });
+    const dubbers = await custom.getDubbers(releaseEndpoints, 60001);
+    const dreamDub = dubbers.types.find((t) => t.name === 'DreamCast');
+    assert.ok(dreamDub && dreamDub.episode_count === 2);
+
+    const srcs = await custom.getDubberSources(releaseEndpoints, 60001, dreamDub.id);
+    const dreamSrc = srcs.sources.find((s) => s.name === 'DreamCast');
+    assert.ok(dreamSrc && dreamSrc.episodes_count === 2);
+
+    const eps = await custom.getEpisodes(releaseEndpoints, 60001, dreamDub.id, dreamSrc.id);
+    assert.equal(eps.episodes.length, 2);
+
+    const ep1 = await custom.getEpisode(releaseEndpoints, 60001, dreamSrc.id, 1);
+    assert.equal(ep1.episode.iframe, false);
+    assert.equal(ep1.episode.url, 'https://play.dreamerscast.com/hls/ep1/master.m3u8');
+  });
+
+  it('merges JAM and JAM CLUB into a single dubber', async () => {
+    const { createCustomSources } = await import('../custom-sources.mjs');
+    const releaseEndpoints = {
+      async info() {
+        return {
+          release: {
+            id: 60002,
+            title_original: 'Test Anime',
+            title_ru: 'Тест',
+            year: 2025,
+            shikimori_id: 99999,
+          },
+        };
+      },
+      async getDubbers() {
+        return { code: 0, types: [{ id: 12, name: 'JAM CLUB' }] };
+      },
+      async getDubberSources() {
+        return { code: 0, sources: [] };
+      },
+    };
+
+    const fetcher = async (input) => {
+      const url = new URL(typeof input === 'string' ? input : input.toString());
+      if (url.hostname === 'api.yani.tv' && url.pathname === '/search') {
+        return jsonResponse({ response: [{ anime_id: 888, remote_ids: { shikimori_id: 99999 } }] });
+      }
+      if (url.hostname === 'api.yani.tv' && url.pathname === '/anime/888/videos') {
+        return jsonResponse({
+          response: [{
+            number: 1,
+            iframe_url: 'https://player.aksor.tv/video/abcdef123456',
+            data: { dubbing: 'Озвучка JAM', player: 'Плеер Aksor' },
+          }],
+        });
+      }
+      return jsonResponse({}, 404);
+    };
+
+    const custom = createCustomSources({ fetcher });
+    const dubbers = await custom.getDubbers(releaseEndpoints, 60002);
+    assert.equal(dubbers.types.length, 1);
+    assert.equal(dubbers.types[0].name, 'JAM CLUB');
+
+    const srcs = await custom.getDubberSources(releaseEndpoints, 60002, 12);
+    assert.ok(srcs.sources.some((s) => s.name === 'Aksor (YummyAnime)'));
+  });
+
+  it('does not stall getDubbers when external providers hang without VPN', async () => {
+    const { createCustomSources } = await import('../custom-sources.mjs');
+    const releaseEndpoints = {
+      async info() {
+        return {
+          release: {
+            id: 60003,
+            title_original: 'Hanging Test',
+            title_ru: 'Зависающий тест',
+            year: 2025,
+            shikimori_id: 77777,
+          },
+        };
+      },
+      async getDubbers() {
+        return { code: 0, types: [{ id: 1, name: 'AniLiberty' }] };
+      },
+      async getDubberSources() {
+        return { code: 0, sources: [] };
+      },
+    };
+
+    const fetcher = () => new Promise(() => {});
+    const custom = createCustomSources({ fetcher });
+    const fastStarted = Date.now();
+    const fast = await custom.getDubbersOfficial(releaseEndpoints, 60003);
+    assert.equal(fast.types.length, 1);
+    assert.ok(Date.now() - fastStarted < 100);
+
+    const started = Date.now();
+    const dubbers = await custom.getDubbers(releaseEndpoints, 60003);
+    const elapsed = Date.now() - started;
+
+    assert.equal(dubbers.types.length, 1);
+    assert.equal(dubbers.types[0].name, 'AniLiberty');
+    assert.ok(elapsed < 7500, `Expected bounded fallback under 7500ms, got ${elapsed}ms`);
+  });
 });

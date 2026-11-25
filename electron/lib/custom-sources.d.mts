@@ -16,6 +16,7 @@ export function createCustomSources(options?: {
   resolveAnimeLibStream?: (url: string) => Promise<string | null>;
   prepareStream?: (url: string) => string | null;
 }): {
+  getDubbersOfficial?(release: ReleaseEndpoints, releaseId: number): Promise<unknown>;
   getDubbers(release: ReleaseEndpoints, releaseId: number): Promise<unknown>;
   getDubberSources(release: ReleaseEndpoints, releaseId: number, dubberId: number): Promise<unknown>;
   getEpisodes(release: ReleaseEndpoints, releaseId: number, dubberId: number, sourceId: number, sort?: number): Promise<unknown>;

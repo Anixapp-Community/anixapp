@@ -1152,6 +1152,8 @@
     if (e.key === 'Escape') close();
   }
 
+  let modalDestroyed = false;
+
   onMount(() => {
     loadWatchProgress();
     stopDlWatch = isMobile ? watchDownloads() : null;
@@ -1171,54 +1173,84 @@
         lastEpisodeTypeUpdateId = readLastEpisodeTypeUpdateId(infoRes?.release ?? infoRes);
       }).catch(() => {});
 
-      api.release.getDubbers(releaseId)
-        .then(async (res: { types?: Dubber[] }) => {
-          const types = (res?.types ?? []).filter(d => !isDubberBlacklisted(String(d.name ?? '')));
-          sourcesLoading = false;
-          if (types.length === 0) {
+      const applyDubberTypes = async (rawTypes: Dubber[] | undefined, { allowEmptyError }: { allowEmptyError: boolean }) => {
+        if (modalDestroyed) return;
+        const types = (rawTypes ?? []).filter(d => !isDubberBlacklisted(String(d.name ?? '')));
+        if (types.length === 0) {
+          if (allowEmptyError) {
+            sourcesLoading = false;
             sourcesError = 'Нет озвучек';
-            return;
           }
-          dubbers = sortDubbersPinnedFirst(types);
-          await tick();
-          focusTvModalContent();
+          return;
+        }
+        sourcesLoading = false;
+        sourcesError = null;
+        dubbers = sortDubbersPinnedFirst(types);
+        await tick();
+        focusTvModalContent();
 
-          // «Продолжить»: сразу последняя озвучка и серия, которые смотрел пользователь.
-          const targetDubber = target && types.find((d) => d.id === target.dubberId);
-          if (target && targetDubber) {
-            await openDubber(targetDubber, target.sourceId, target.episode);
-            return;
+        if (modalView !== 'dubbers') return;
+
+        // «Продолжить»: сразу последняя озвучка и серия, которые смотрел пользователь.
+        const targetDubber = target && types.find((d) => d.id === target.dubberId);
+        if (target && targetDubber) {
+          await openDubber(targetDubber, target.sourceId, target.episode);
+          return;
+        }
+
+        if (!cached) return;
+
+        variantFilter = cached.variantFilter;
+        searchInput = cached.searchInput;
+        selectedEpisodePos = cached.selectedEpisodePos;
+
+        if (cached.modalView === 'updates') {
+          void openUpdatesView();
+          return;
+        }
+
+        if ((cached.modalView === 'sources' || cached.modalView === 'episodes') && cached.selectedDubberId != null) {
+          const dubber = types.find((d) => d.id === cached.selectedDubberId);
+          if (!dubber) return;
+          await openDubber(dubber, cached.modalView === 'episodes' ? cached.selectedSourceId ?? undefined : undefined);
+          if (modalView === 'episodes' && selectedDubber?.id === dubber.id) {
+            searchInput = cached.searchInput;
+            selectedEpisodePos = cached.selectedEpisodePos;
           }
+        }
+      };
 
-          if (!cached) return;
-
-          variantFilter = cached.variantFilter;
-          searchInput = cached.searchInput;
-          selectedEpisodePos = cached.selectedEpisodePos;
-
-          if (cached.modalView === 'updates') {
-            void openUpdatesView();
-            return;
-          }
-
-          if ((cached.modalView === 'sources' || cached.modalView === 'episodes') && cached.selectedDubberId != null) {
-            const dubber = types.find((d) => d.id === cached.selectedDubberId);
-            if (!dubber) return;
-            await openDubber(dubber, cached.modalView === 'episodes' ? cached.selectedSourceId ?? undefined : undefined);
-            if (modalView === 'episodes' && selectedDubber?.id === dubber.id) {
-              searchInput = cached.searchInput;
-              selectedEpisodePos = cached.selectedEpisodePos;
+      const fullDubbersPromise = api.release.getDubbers(releaseId);
+      if (api.release.getDubbersOfficial) {
+        let officialFailed = false;
+        api.release.getDubbersOfficial(releaseId)
+          .then((res: { types?: Dubber[] }) => applyDubberTypes(res?.types, { allowEmptyError: false }))
+          .catch(() => {
+            officialFailed = true;
+          });
+        fullDubbersPromise
+          .then((res: { types?: Dubber[] }) => applyDubberTypes(res?.types, { allowEmptyError: true }))
+          .catch(() => {
+            if (modalDestroyed) return;
+            if (officialFailed || dubbers.length === 0) {
+              sourcesLoading = false;
+              sourcesError = 'Ошибка загрузки';
             }
-          }
-        })
-        .catch(() => {
-          sourcesLoading = false;
-          sourcesError = 'Ошибка загрузки';
-        });
+          });
+      } else {
+        fullDubbersPromise
+          .then((res: { types?: Dubber[] }) => applyDubberTypes(res?.types, { allowEmptyError: true }))
+          .catch(() => {
+            if (modalDestroyed) return;
+            sourcesLoading = false;
+            sourcesError = 'Ошибка загрузки';
+          });
+      }
     }
   });
 
   onDestroy(() => {
+    modalDestroyed = true;
     sourceCheckGeneration++;
     // отписка от загрузок выполняется ниже вместе с остальной очисткой
     stopDlWatch?.();

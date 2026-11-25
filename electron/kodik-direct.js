@@ -168,13 +168,26 @@ async function resolveKodikEmbedUrl(embedUrl) {
   return url;
 }
 
+async function fetchKodikHtml(pageUrl) {
+  const headers = {
+    Referer: KODIK_PLAYER_ORIGIN,
+    Accept: 'text/html,application/xhtml+xml',
+  };
+  try {
+    return await fetchText(pageUrl, headers);
+  } catch {
+    const bareUrl = pageUrl.split('?')[0];
+    if (bareUrl && bareUrl !== pageUrl) {
+      return fetchText(bareUrl, headers).catch(() => '');
+    }
+    return '';
+  }
+}
+
 async function loadKodikPlayer(embedUrl) {
   const pageUrl = await resolveKodikEmbedUrl(embedUrl);
   let videoInfo = parseKodikLinkFromUrl(pageUrl);
-  const htmlPromise = fetchText(pageUrl, {
-    Referer: KODIK_PLAYER_ORIGIN,
-    Accept: 'text/html,application/xhtml+xml',
-  }).catch(() => '');
+  const htmlPromise = fetchKodikHtml(pageUrl);
   const ftorEarly = (videoInfo?.hash && videoInfo?.id && videoInfo?.type)
     ? fetchKodikFtorLinks(pageUrl, videoInfo).catch(() => null)
     : Promise.resolve(null);

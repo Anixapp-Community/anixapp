@@ -710,6 +710,11 @@ function createAnixBridgeCore(options = {}) {
       if (id == null || cat == null) return { videos: [] };
       return c.getClient().endpoints.release.getVideoInCategory({ id, categoryId: cat, page });
     }),
+    'anix:getDubbersOfficial': h(async (c, releaseId) => {
+      const id = toPositiveInt(releaseId);
+      if (id == null) return { types: [] };
+      return (await getCustomSources()).getDubbersOfficial(c.getClient().endpoints.release, id);
+    }),
     'anix:getDubbers': h(async (c, releaseId) => {
       const id = toPositiveInt(releaseId);
       if (id == null) return { types: [] };

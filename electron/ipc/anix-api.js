@@ -102,6 +102,17 @@ ipcMain.handle('anix:getVideoInCategory', async (_, releaseId, categoryId, page 
   }
 });
 
+ipcMain.handle('anix:getDubbersOfficial', async (_, releaseId) => {
+  const id = toPositiveInt(releaseId);
+  if (id == null) return { types: [] };
+  try {
+    const client = getAnixart();
+    return await (await getCustomSources()).getDubbersOfficial(client.endpoints.release, id);
+  } catch (err) {
+    handleAnixError(err, 'getDubbersOfficial');
+  }
+});
+
 ipcMain.handle('anix:getDubbers', async (_, releaseId) => {
   const id = toPositiveInt(releaseId);
   if (id == null) return { types: [] };

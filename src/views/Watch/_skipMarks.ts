@@ -1,3 +1,5 @@
+import { episodeDisplayNumber } from '../../utils/episode-display';
+
 export interface SkipRange {
   start: number;
   end: number;
@@ -140,6 +142,152 @@ export function buildTimelineSausages(
   }
 
   return out.length > 0 ? out : [{ id: 'all', startPct: 0, widthPct: 100, kind: 'content' }];
+}
+
+const KODIK_SKIP_TTL_MS = 10 * 60 * 1000;
+const kodikSkipCache = new Map<string, { expires: number; value: SkipMarks | null }>();
+const kodikSkipInflight = new Map<string, Promise<SkipMarks | null>>();
+
+type ReleaseBridgeApi = {
+  getDubbers?: (releaseId: number) => Promise<{ types?: Array<{ id: number; name?: string }> }>;
+  getDubberSources?: (releaseId: number, dubberId: number) => Promise<{ sources?: Array<{ id: number; name?: string }> }>;
+  getEpisodes?: (releaseId: number, dubberId: number, sourceId: number) => Promise<{ episodes?: Array<{ position: number; name?: string; url?: string }> }>;
+  getEpisode?: (releaseId: number, sourceId: number, position: number) => Promise<{ episode?: { url?: string } | null }>;
+  getDirectVideoLink?: (embedUrl: string) => Promise<{ skip?: unknown } | null>;
+};
+
+export interface KodikSkipFallbackParams {
+  releaseId: number;
+  currentSourceId?: number | null;
+  dubberId?: number | null;
+  dubberName?: string | null;
+  episodePosition: number;
+  episodeName?: string | null;
+  episodes?: Array<{ position: number; name?: string }>;
+}
+
+/**
+ * Fallback lookup for skip marks via Kodik when the active source did not provide timestamps.
+ * Tries the active dubber's Kodik source first, then other dubbers' Kodik sources.
+ */
+export async function fetchKodikFallbackSkipMarks(params: KodikSkipFallbackParams): Promise<SkipMarks | null> {
+  const rId = Math.trunc(Number(params.releaseId));
+  if (!(rId > 0)) return null;
+
+  const list = params.episodes ?? [];
+  const rawNum = episodeDisplayNumber(
+    list.find((e) => e.position === params.episodePosition) ?? {
+      position: params.episodePosition,
+      name: params.episodeName ?? null,
+    },
+    list,
+  );
+  const displayNum = rawNum > 0 ? rawNum : (params.episodePosition === 0 ? 1 : 0);
+  if (!(displayNum > 0)) return null;
+
+  const dubKey = String(params.dubberId || params.dubberName || '').trim().toLowerCase();
+  const cacheKey = `${rId}:${dubKey}:${displayNum}`;
+  const hit = kodikSkipCache.get(cacheKey);
+  if (hit && hit.expires > Date.now()) return hit.value;
+  const pending = kodikSkipInflight.get(cacheKey);
+  if (pending) return pending;
+
+  const task = (async (): Promise<SkipMarks | null> => {
+    try {
+      const api = (window as unknown as { anixApi?: { release?: ReleaseBridgeApi } }).anixApi?.release;
+      if (!api?.getDubbers || !api?.getDubberSources || !api?.getDirectVideoLink) return null;
+
+      const dubRes = await api.getDubbers(rId);
+      const dubbers = dubRes?.types ?? [];
+      if (!dubbers.length) return null;
+
+      const norm = (s: string | null | undefined) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const wantDub = norm(params.dubberName);
+      const preferredDub = dubbers.find((d) => params.dubberId != null && Number(d.id) === Number(params.dubberId))
+        ?? dubbers.find((d) => wantDub && (norm(d.name) === wantDub || norm(d.name).includes(wantDub) || wantDub.includes(norm(d.name))));
+
+      const orderedDubs = preferredDub
+        ? [preferredDub, ...dubbers.filter((d) => d.id !== preferredDub.id)]
+        : dubbers;
+
+      for (const dub of orderedDubs) {
+        let sources: Array<{ id: number; name?: string }> = [];
+        try {
+          sources = (await api.getDubberSources(rId, dub.id))?.sources ?? [];
+        } catch {
+          continue;
+        }
+        const kodikSources = sources.filter((s) =>
+          /kodik|aniqit/i.test(String(s.name ?? '')) && Number(s.id) !== Number(params.currentSourceId));
+        for (const src of kodikSources) {
+          let embedUrl: string | undefined;
+          if (api.getEpisode) {
+            try {
+              embedUrl = (await api.getEpisode(rId, src.id, displayNum))?.episode?.url;
+            } catch { /* fallback to episodes list */ }
+          }
+          if (!embedUrl && api.getEpisodes) {
+            try {
+              const eps = (await api.getEpisodes(rId, dub.id, src.id))?.episodes ?? [];
+              const match = eps.find((e) => episodeDisplayNumber(e, eps) === displayNum) ?? eps.find((e) => e.position === displayNum);
+              embedUrl = match?.url;
+            } catch { /* ignore */ }
+          }
+          if (!embedUrl) continue;
+          try {
+            const direct = await api.getDirectVideoLink(embedUrl);
+            const skip = normalizeSkipMarks(direct?.skip);
+            if (skip) {
+              kodikSkipCache.set(cacheKey, { expires: Date.now() + KODIK_SKIP_TTL_MS, value: skip });
+              return skip;
+            }
+          } catch { /* try next Kodik source */ }
+        }
+      }
+      kodikSkipCache.set(cacheKey, { expires: Date.now() + KODIK_SKIP_TTL_MS, value: null });
+      return null;
+    } catch {
+      return null;
+    } finally {
+      kodikSkipInflight.delete(cacheKey);
+    }
+  })();
+
+  kodikSkipInflight.set(cacheKey, task);
+  return task;
+}
+
+const KODIK_TOLERANCE_SEC = 15;
+
+function rangesDiffer(a: SkipRange | null, b: SkipRange | null, toleranceSec = KODIK_TOLERANCE_SEC): boolean {
+  if (!a && !b) return false;
+  if (!a || !b) return true;
+  return Math.abs(a.start - b.start) > toleranceSec || Math.abs(a.end - b.end) > toleranceSec;
+}
+
+export function skipMarksDisagree(
+  source: SkipMarks | null | undefined,
+  kodik: SkipMarks | null | undefined,
+  toleranceSec = KODIK_TOLERANCE_SEC,
+): boolean {
+  if (!source) return !!kodik;
+  if (!kodik) return false;
+  return rangesDiffer(source.opening, kodik.opening, toleranceSec)
+    || rangesDiffer(source.ending, kodik.ending, toleranceSec);
+}
+
+/**
+ * Cross-references non-Kodik skip marks (e.g. AnimeLib, AniLibria) against Kodik.
+ * Returns Kodik's marks if source marks are missing or disagree beyond tolerance.
+ */
+export async function resolveVerifiedSkipMarks(
+  sourceSkip: SkipMarks | null | undefined,
+  params: KodikSkipFallbackParams,
+): Promise<SkipMarks | null> {
+  const kodikSkip = await fetchKodikFallbackSkipMarks(params);
+  if (!sourceSkip) return kodikSkip;
+  if (!kodikSkip) return sourceSkip;
+  return skipMarksDisagree(sourceSkip, kodikSkip) ? kodikSkip : sourceSkip;
 }
 
 /** Сколько процентов сосиски уже проиграно. */
